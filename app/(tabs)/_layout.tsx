@@ -1,33 +1,41 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
+        tabBarActiveTintColor: '#F8C537',
+        tabBarInactiveTintColor: '#8D99AE',
         tabBarButton: HapticTab,
+        tabBarStyle: {
+          backgroundColor: '#0B1628',
+          borderTopColor: 'rgba(255, 255, 255, 0.08)',
+          height: 72,
+          paddingBottom: 12,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '700',
+        },
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Players',
+          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="groups" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="matches"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Matches',
+          tabBarIcon: ({ color }) => <MaterialIcons size={25} name="sports-tennis" color={color} />,
         }}
       />
     </Tabs>

@@ -3,12 +3,7 @@ import { router } from 'expo-router';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const players = [
-  { id: '1', firstName: 'Player', lastName: 'One', handedness: 'Right-handed' },
-  { id: '2', firstName: 'Player', lastName: 'Two', handedness: 'Left-handed' },
-];
-
-export default function PlayersScreen() {
+export default function MatchesScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
@@ -17,7 +12,7 @@ export default function PlayersScreen() {
         </Pressable>
         <View>
           <Text style={styles.kicker}>Service Score</Text>
-          <Text style={styles.title}>Players</Text>
+          <Text style={styles.title}>Matches</Text>
         </View>
         <Pressable style={styles.profileButton} onPress={() => Alert.alert('Profile', 'Profile screen coming soon.')}>
           <MaterialIcons name="person" size={22} color="#07101F" />
@@ -25,38 +20,45 @@ export default function PlayersScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.notice}>
-          <MaterialIcons name="info-outline" size={20} color="#F8C537" />
-          <Text style={styles.noticeText}>Create at least 2 players before starting a match.</Text>
+        <View style={styles.heroPanel}>
+          <MaterialIcons name="sports-tennis" size={34} color="#F8C537" />
+          <Text style={styles.heroTitle}>No match yet</Text>
+          <Text style={styles.heroText}>
+            Use the + button to create a tennis match once you have at least two players.
+          </Text>
         </View>
 
-        {players.map((player) => (
-          <View key={player.id} style={styles.playerCard}>
-            <View style={styles.avatar}>
-              <MaterialIcons name="person" size={28} color="#F8C537" />
-            </View>
-            <View style={styles.playerInfo}>
-              <Text style={styles.playerName}>
-                {player.firstName} {player.lastName}
-              </Text>
-              <Text style={styles.playerMeta}>{player.handedness}</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#8D99AE" />
+        <View style={styles.matchPreview}>
+          <View style={styles.matchHeader}>
+            <Text style={styles.sectionTitle}>Next in task 4</Text>
+            <Text style={styles.badge}>Planned</Text>
           </View>
-        ))}
-
-        <View style={styles.emptyPlan}>
-          <Text style={styles.sectionTitle}>Next in task 3</Text>
           <Text style={styles.bodyText}>
-            The + button will open the full player form with name, gender, handedness, birthday,
-            strengths, weaknesses and photo.
+            Match creation will include Player 1, Player 2, sets, games per set, tiebreaks,
+            deuce scoring and court viewing position.
           </Text>
+        </View>
+
+        <View style={styles.statsPreview}>
+          <Text style={styles.sectionTitle}>Stats area</Text>
+          <View style={styles.statRow}>
+            <Text style={styles.statLabel}>Points</Text>
+            <Text style={styles.statValue}>--</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Text style={styles.statLabel}>First serve %</Text>
+            <Text style={styles.statValue}>--</Text>
+          </View>
+          <View style={styles.statRow}>
+            <Text style={styles.statLabel}>Aces</Text>
+            <Text style={styles.statValue}>--</Text>
+          </View>
         </View>
       </ScrollView>
 
       <Pressable
         style={styles.fab}
-        onPress={() => Alert.alert('New player', 'Player creation form will be built in task 3.')}>
+        onPress={() => Alert.alert('New match', 'Match creation form will be built in task 4.')}>
         <MaterialIcons name="add" size={32} color="#07101F" />
       </Pressable>
     </SafeAreaView>
@@ -113,70 +115,81 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
-  notice: {
+  heroPanel: {
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
     borderColor: 'rgba(255, 255, 255, 0.12)',
     borderRadius: 8,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
-    padding: 14,
+    padding: 22,
   },
-  noticeText: {
-    color: '#DCE4F2',
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  playerCard: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 14,
-    padding: 14,
-  },
-  avatar: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(248, 197, 55, 0.12)',
-    borderRadius: 24,
-    height: 48,
-    justifyContent: 'center',
-    width: 48,
-  },
-  playerInfo: {
-    flex: 1,
-  },
-  playerName: {
+  heroTitle: {
     color: '#F7F9FC',
-    fontSize: 17,
+    fontSize: 21,
     fontWeight: '800',
+    marginTop: 12,
   },
-  playerMeta: {
-    color: '#8D99AE',
-    fontSize: 13,
-    marginTop: 3,
+  heroText: {
+    color: '#DCE4F2',
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 8,
+    textAlign: 'center',
   },
-  emptyPlan: {
+  matchPreview: {
     backgroundColor: 'rgba(248, 197, 55, 0.08)',
     borderColor: 'rgba(248, 197, 55, 0.18)',
     borderRadius: 8,
     borderWidth: 1,
     padding: 16,
   },
+  matchHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   sectionTitle: {
     color: '#F8C537',
     fontSize: 15,
     fontWeight: '800',
-    marginBottom: 6,
+  },
+  badge: {
+    backgroundColor: 'rgba(248, 197, 55, 0.14)',
+    borderRadius: 8,
+    color: '#F8C537',
+    fontSize: 12,
+    fontWeight: '800',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   bodyText: {
     color: '#DCE4F2',
     fontSize: 14,
     lineHeight: 21,
+  },
+  statsPreview: {
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 12,
+    padding: 16,
+  },
+  statRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statLabel: {
+    color: '#DCE4F2',
+    fontSize: 14,
+  },
+  statValue: {
+    color: '#F7F9FC',
+    fontSize: 16,
+    fontWeight: '800',
   },
   fab: {
     alignItems: 'center',
