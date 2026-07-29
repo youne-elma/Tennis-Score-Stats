@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Tennis-Score-Stats",
+    "name": "Tennis Score Stats",
     "slug": "Tennis-Score-Stats",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,13 +13,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8C537",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.younelma.TennisScoreStats"
     },
     "web": {
       "output": "static",
@@ -43,6 +44,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "4a8d17c0-cbe4-4c87-bf77-4b10752eb4df"
+      }
     }
   }
 }

@@ -5,6 +5,62 @@
 
 import { Platform } from 'react-native';
 
+export const AppTheme = {
+  colors: {
+    background: '#07101F',
+    surface: 'rgba(255, 255, 255, 0.08)',
+    surfaceStrong: 'rgba(255, 255, 255, 0.12)',
+    surfaceMuted: 'rgba(255, 255, 255, 0.06)',
+    inputSurface: 'rgba(7, 16, 31, 0.72)',
+    overlay: 'rgba(0, 0, 0, 0.58)',
+    border: 'rgba(255, 255, 255, 0.12)',
+    borderGold: 'rgba(248, 197, 55, 0.22)',
+    primarySoft: 'rgba(248, 197, 55, 0.12)',
+    primaryWash: 'rgba(248, 197, 55, 0.08)',
+    primary: '#F8C537',
+    primaryPressed: '#E7B526',
+    text: '#F7F9FC',
+    textMuted: '#AAB5C8',
+    textSubtle: '#8D99AE',
+    textDisabled: '#C6CEDB',
+    placeholder: '#6E7B91',
+    textOnPrimary: '#07101F',
+    danger: '#FF6B6B',
+    dangerSoft: 'rgba(255, 107, 107, 0.12)',
+    dangerBorder: 'rgba(255, 107, 107, 0.28)',
+    success: '#65D6A4',
+    tabBar: '#0B1628',
+  },
+  radii: {
+    sm: 6,
+    md: 8,
+    lg: 18,
+    pill: 999,
+  },
+  spacing: {
+    xs: 6,
+    sm: 10,
+    md: 14,
+    lg: 20,
+    xl: 28,
+  },
+  typography: {
+    kicker: 12,
+    body: 14,
+    input: 16,
+    subtitle: 18,
+    title: 28,
+    display: 36,
+  },
+  shadow: {
+    color: '#000',
+    offset: { width: 0, height: 10 },
+    opacity: 0.3,
+    radius: 18,
+    elevation: 8,
+  },
+};
+
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 
