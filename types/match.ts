@@ -39,6 +39,7 @@ export type TennisMatch = {
   id: string;
   player1Id: string;
   player2Id: string;
+  initialServerId: string;
   numberOfSets: NumberOfSets;
   gamesPerSet: GamesPerSet;
   useTiebreaks: boolean;

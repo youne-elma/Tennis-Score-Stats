@@ -34,7 +34,7 @@ export function calculateTennisScore(match: TennisMatch): TennisScoreState {
     pointLabelPlayer2: '0',
     totalPointsPlayer1: 0,
     totalPointsPlayer2: 0,
-    currentServerId: match.player1Id,
+    currentServerId: getInitialServerId(match),
     inTiebreak: false,
   };
 
@@ -177,10 +177,13 @@ function finishSet(
 }
 
 function refreshDerivedLabels(state: TennisScoreState, match: TennisMatch) {
+  const initialServerId = getInitialServerId(match);
+  const receiverId = initialServerId === match.player1Id ? match.player2Id : match.player1Id;
+
   state.currentSetNumber = state.completedSets.length + 1;
   state.currentGameNumber = state.player1.games + state.player2.games + 1;
   state.currentServerId =
-    (state.player1.games + state.player2.games) % 2 === 0 ? match.player1Id : match.player2Id;
+    (state.player1.games + state.player2.games) % 2 === 0 ? initialServerId : receiverId;
 
   if (state.inTiebreak) {
     state.pointLabelPlayer1 = String(state.player1.points);
@@ -204,4 +207,8 @@ function refreshDerivedLabels(state: TennisScoreState, match: TennisMatch) {
 
   state.pointLabelPlayer1 = tennisPointLabels[Math.min(state.player1.points, 3)];
   state.pointLabelPlayer2 = tennisPointLabels[Math.min(state.player2.points, 3)];
+}
+
+function getInitialServerId(match: TennisMatch) {
+  return match.initialServerId === match.player2Id ? match.player2Id : match.player1Id;
 }

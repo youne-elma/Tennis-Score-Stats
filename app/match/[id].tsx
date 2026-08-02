@@ -2,7 +2,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
@@ -48,6 +48,7 @@ const defaultServiceDetail: ServiceDetailForm = {
 };
 
 export default function MatchScoringScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
     matches,
@@ -81,6 +82,7 @@ export default function MatchScoringScreen() {
   const isMatchEnded = match?.status === 'Ended' || Boolean(score?.matchWinnerId);
   const activeServePhase: ServePhase =
     lastEvent?.phase === 'First Serve' && lastEvent.action === 'Fault' ? 'Second Serve' : 'First Serve';
+  const bottomInset = Math.max(insets.bottom, 10);
 
   useEffect(() => {
     if (!match) {
@@ -232,7 +234,7 @@ export default function MatchScoringScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 108 + bottomInset }]}>
         <AppCard style={styles.scoreboard}>
           <PlayerScorePanel
             player={player1}
@@ -331,7 +333,7 @@ export default function MatchScoringScreen() {
         </AppCard>
       </ScrollView>
 
-      <View style={styles.matchNav}>
+      <View style={[styles.matchNav, { minHeight: 66 + bottomInset, paddingBottom: bottomInset }]}>
         <MatchNavButton icon="query-stats" label="Stats" onPress={() => setStatsVisible(true)} />
         <MatchNavButton
           icon="undo"
@@ -1236,7 +1238,6 @@ const styles = StyleSheet.create({
   content: {
     gap: 14,
     paddingHorizontal: 20,
-    paddingBottom: 118,
   },
   scoreboard: {
     alignItems: 'center',
@@ -1493,8 +1494,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     left: 0,
-    minHeight: 76,
-    paddingBottom: 10,
     paddingHorizontal: 8,
     paddingTop: 8,
     position: 'absolute',
