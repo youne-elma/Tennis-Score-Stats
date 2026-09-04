@@ -50,8 +50,10 @@ export default function SignupScreen() {
       const result = await signUp(nextName, nextEmail, password);
 
       if (result.needsEmailConfirmation) {
-        Alert.alert('Check your email', 'Confirm your email address, then come back and login.');
-        router.replace(loginRoute);
+        router.replace({
+          pathname: '/auth/check-email',
+          params: { email: nextEmail },
+        });
         return;
       }
 
