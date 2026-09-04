@@ -18,6 +18,8 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const emailAlreadyRegisteredCode = 'auth/email-already-registered';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [mode, setMode] = useState<AuthMode>('loading');
@@ -79,7 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (error) {
+          if (isEmailAlreadyRegisteredMessage(error.message)) {
+            throw createEmailAlreadyRegisteredError();
+          }
+
           throw error;
+        }
+
+        if (data.user && data.user.identities?.length === 0) {
+          throw createEmailAlreadyRegisteredError();
         }
 
         return { needsEmailConfirmation: !data.session };
@@ -103,4 +113,21 @@ export function useAuth() {
   }
 
   return context;
+}
+
+function createEmailAlreadyRegisteredError() {
+  const error = new Error('An account already exists with this email. Please login instead.');
+  error.name = emailAlreadyRegisteredCode;
+
+  return error;
+}
+
+function isEmailAlreadyRegisteredMessage(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  return normalizedMessage.includes('already registered') || normalizedMessage.includes('already exists');
+}
+
+export function isEmailAlreadyRegisteredError(error: unknown) {
+  return error instanceof Error && error.name === emailAlreadyRegisteredCode;
 }

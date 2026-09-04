@@ -8,7 +8,7 @@ import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
-import { useAuth } from '@/contexts/auth-context';
+import { isEmailAlreadyRegisteredError, useAuth } from '@/contexts/auth-context';
 
 const loginRoute = '/auth/login' as Href;
 
@@ -59,6 +59,14 @@ export default function SignupScreen() {
 
       router.replace('/mode');
     } catch (error) {
+      if (isEmailAlreadyRegisteredError(error)) {
+        Alert.alert('Account already exists', 'This email is already linked to an account. Login instead.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go to login', onPress: () => router.replace(loginRoute) },
+        ]);
+        return;
+      }
+
       Alert.alert('Signup failed', getAuthErrorMessage(error));
     } finally {
       setIsSubmitting(false);

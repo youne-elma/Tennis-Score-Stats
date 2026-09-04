@@ -1,7 +1,15 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
+import { useAuth } from '@/contexts/auth-context';
 import { Player, PlayerFormValues } from '@/types/player';
+import {
+  createSupabasePlayer,
+  deleteSupabasePlayer,
+  loadSupabasePlayers,
+  syncLocalPlayersToSupabase,
+  updateSupabasePlayer,
+} from '@/utils/supabase-players';
 import { loadPlayers, savePlayers } from '@/utils/storage';
 
 type PlayersContextValue = {
@@ -15,49 +23,88 @@ type PlayersContextValue = {
 const PlayersContext = createContext<PlayersContextValue | null>(null);
 
 export function PlayersProvider({ children }: { children: ReactNode }) {
+  const { mode, user } = useAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
   const [hasLoadedPlayers, setHasLoadedPlayers] = useState(false);
+  const [syncedLocalPlayersUserId, setSyncedLocalPlayersUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    loadPlayers()
-      .then((storedPlayers) => {
+    async function loadPlayerSource() {
+      setIsLoadingPlayers(true);
+
+      try {
+        if (mode === 'loading') {
+          return;
+        }
+
+        if (mode === 'authenticated' && user) {
+          const localPlayers = await loadPlayers();
+
+          if (syncedLocalPlayersUserId !== user.id && localPlayers.length > 0) {
+            await syncLocalPlayersToSupabase(user.id, localPlayers);
+            setSyncedLocalPlayersUserId(user.id);
+          }
+
+          const cloudPlayers = await loadSupabasePlayers(user.id);
+
+          if (isMounted) {
+            setPlayers(cloudPlayers);
+          }
+
+          return;
+        }
+
+        const storedPlayers = await loadPlayers();
+
         if (isMounted) {
           setPlayers(storedPlayers);
         }
-      })
-      .catch(() => {
-        Alert.alert('Storage error', 'Could not load saved players.');
-      })
-      .finally(() => {
-        if (isMounted) {
+      } catch {
+        Alert.alert('Players error', 'Could not load players.');
+      } finally {
+        if (isMounted && mode !== 'loading') {
           setIsLoadingPlayers(false);
           setHasLoadedPlayers(true);
         }
-      });
+      }
+    }
+
+    loadPlayerSource();
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [mode, syncedLocalPlayersUserId, user]);
 
   useEffect(() => {
-    if (!hasLoadedPlayers) {
+    if (!hasLoadedPlayers || mode === 'authenticated') {
       return;
     }
 
     savePlayers(players).catch(() => {
       Alert.alert('Storage error', 'Could not save players.');
     });
-  }, [hasLoadedPlayers, players]);
+  }, [hasLoadedPlayers, mode, players]);
 
   const value = useMemo(
     () => ({
       players,
       isLoadingPlayers,
-      addPlayer: (player: PlayerFormValues) => {
+      addPlayer: async (player: PlayerFormValues) => {
+        if (mode === 'authenticated' && user) {
+          try {
+            const createdPlayer = await createSupabasePlayer(user.id, player);
+            setPlayers((currentPlayers) => [...currentPlayers, createdPlayer]);
+          } catch {
+            Alert.alert('Players error', 'Could not create player.');
+          }
+
+          return;
+        }
+
         setPlayers((currentPlayers) => [
           ...currentPlayers,
           {
@@ -66,18 +113,42 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
           },
         ]);
       },
-      updatePlayer: (id: string, player: PlayerFormValues) => {
+      updatePlayer: async (id: string, player: PlayerFormValues) => {
+        if (mode === 'authenticated' && user) {
+          try {
+            const updatedPlayer = await updateSupabasePlayer(id, user.id, player);
+            setPlayers((currentPlayers) =>
+              currentPlayers.map((currentPlayer) => (currentPlayer.id === id ? updatedPlayer : currentPlayer))
+            );
+          } catch {
+            Alert.alert('Players error', 'Could not update player.');
+          }
+
+          return;
+        }
+
         setPlayers((currentPlayers) =>
           currentPlayers.map((currentPlayer) =>
             currentPlayer.id === id ? { id, ...player } : currentPlayer
           )
         );
       },
-      deletePlayer: (id: string) => {
+      deletePlayer: async (id: string) => {
+        if (mode === 'authenticated' && user) {
+          try {
+            await deleteSupabasePlayer(id, user.id);
+            setPlayers((currentPlayers) => currentPlayers.filter((player) => player.id !== id));
+          } catch {
+            Alert.alert('Players error', 'Could not delete player.');
+          }
+
+          return;
+        }
+
         setPlayers((currentPlayers) => currentPlayers.filter((player) => player.id !== id));
       },
     }),
-    [isLoadingPlayers, players]
+    [isLoadingPlayers, mode, players, user]
   );
 
   return <PlayersContext.Provider value={value}>{children}</PlayersContext.Provider>;
