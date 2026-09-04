@@ -1,5 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Href, router } from 'expo-router';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,12 +8,59 @@ import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 
 const loginRoute = '/auth/login' as Href;
 
 export default function SignupScreen() {
-  const showComingSoon = () => {
-    Alert.alert('Signup coming soon', 'Account creation is not connected yet. Continue offline for now.');
+  const { continueOffline, signUp } = useAuth();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const enterOffline = () => {
+    continueOffline();
+    router.replace('/mode');
+  };
+
+  const submitSignup = async () => {
+    const nextName = name.trim();
+    const nextEmail = email.trim();
+
+    if (!nextName || !nextEmail || !password || !confirmPassword) {
+      Alert.alert('Missing information', 'Name, email and password are required.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Password mismatch', 'Password and confirmation must match.');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Weak password', 'Password must contain at least 6 characters.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const result = await signUp(nextName, nextEmail, password);
+
+      if (result.needsEmailConfirmation) {
+        Alert.alert('Check your email', 'Confirm your email address, then come back and login.');
+        router.replace(loginRoute);
+        return;
+      }
+
+      router.replace('/mode');
+    } catch (error) {
+      Alert.alert('Signup failed', getAuthErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -31,12 +79,31 @@ export default function SignupScreen() {
         </View>
 
         <AppCard style={styles.form}>
-          <AppInput label="Name" placeholder="Coach Kamal" />
-          <AppInput label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
-          <AppInput label="Password" placeholder="Password" secureTextEntry />
-          <AppInput label="Confirm password" placeholder="Confirm password" secureTextEntry />
+          <AppInput label="Name" placeholder="Coach Kamal" value={name} onChangeText={setName} />
+          <AppInput
+            label="Email"
+            placeholder="you@example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <AppInput label="Password" placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+          <AppInput
+            label="Confirm password"
+            placeholder="Confirm password"
+            secureTextEntry
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+          />
 
-          <AppButton title="Create account" icon="person-add" onPress={showComingSoon} />
+          <AppButton
+            title={isSubmitting ? 'Creating account...' : 'Create account'}
+            icon="person-add"
+            disabled={isSubmitting}
+            onPress={submitSignup}
+          />
         </AppCard>
 
         <View style={styles.bottomActions}>
@@ -44,7 +111,7 @@ export default function SignupScreen() {
             title="Continue offline"
             icon="sports-tennis"
             variant="secondary"
-            onPress={() => router.replace('/mode')}
+            onPress={enterOffline}
           />
           <Pressable onPress={() => router.replace(loginRoute)}>
             <Text style={styles.switchText}>Already have an account? Login</Text>
@@ -53,6 +120,14 @@ export default function SignupScreen() {
       </View>
     </SafeAreaView>
   );
+}
+
+function getAuthErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Please try again.';
 }
 
 const styles = StyleSheet.create({

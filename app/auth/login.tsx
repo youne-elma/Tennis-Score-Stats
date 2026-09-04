@@ -1,5 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Href, router } from 'expo-router';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,12 +8,43 @@ import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 
 const signupRoute = '/auth/signup' as Href;
 
 export default function LoginScreen() {
-  const showComingSoon = () => {
-    Alert.alert('Login coming soon', 'Authentication is not connected yet. Continue offline for now.');
+  const { continueOffline, signIn } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const enterOffline = () => {
+    continueOffline();
+    router.replace('/mode');
+  };
+
+  const submitLogin = async () => {
+    const nextEmail = email.trim();
+
+    if (!nextEmail || !password) {
+      Alert.alert('Missing information', 'Email and password are required.');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await signIn(nextEmail, password);
+      router.replace('/mode');
+    } catch (error) {
+      Alert.alert('Login failed', getAuthErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const showPasswordResetSoon = () => {
+    Alert.alert('Password reset coming soon', 'Password reset will be added in a later step.');
   };
 
   return (
@@ -31,11 +63,19 @@ export default function LoginScreen() {
         </View>
 
         <AppCard style={styles.form}>
-          <AppInput label="Email" placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
-          <AppInput label="Password" placeholder="Password" secureTextEntry />
+          <AppInput
+            label="Email"
+            placeholder="you@example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <AppInput label="Password" placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
 
-          <AppButton title="Login" icon="login" onPress={showComingSoon} />
-          <Pressable style={styles.textButton} onPress={showComingSoon}>
+          <AppButton title={isSubmitting ? 'Logging in...' : 'Login'} icon="login" disabled={isSubmitting} onPress={submitLogin} />
+          <Pressable style={styles.textButton} onPress={showPasswordResetSoon}>
             <Text style={styles.textButtonLabel}>Forgot password?</Text>
           </Pressable>
         </AppCard>
@@ -45,7 +85,7 @@ export default function LoginScreen() {
             title="Continue offline"
             icon="sports-tennis"
             variant="secondary"
-            onPress={() => router.replace('/mode')}
+            onPress={enterOffline}
           />
           <Pressable onPress={() => router.replace(signupRoute)}>
             <Text style={styles.switchText}>No account yet? Create one</Text>
@@ -54,6 +94,14 @@ export default function LoginScreen() {
       </View>
     </SafeAreaView>
   );
+}
+
+function getAuthErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Please try again.';
 }
 
 const styles = StyleSheet.create({

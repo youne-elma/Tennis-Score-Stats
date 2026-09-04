@@ -5,12 +5,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppCard } from '@/components/ui/app-card';
 import { AppTheme } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function ScoreModeScreen() {
+  const { mode, signOut } = useAuth();
+
+  const leaveMode = async () => {
+    if (mode === 'authenticated') {
+      await signOut();
+    }
+
+    router.replace('/');
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
-        <Pressable style={styles.iconButton} onPress={() => router.replace('/')}>
+        <Pressable style={styles.iconButton} onPress={leaveMode}>
           <MaterialIcons name="logout" size={21} color={AppTheme.colors.primary} />
         </Pressable>
         <Pressable style={styles.profileButton}>

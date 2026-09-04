@@ -5,11 +5,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/app-button';
 import { AppTheme } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 
 const loginRoute = '/auth/login' as Href;
 const signupRoute = '/auth/signup' as Href;
 
 export default function AuthGatewayScreen() {
+  const { continueOffline } = useAuth();
+
+  const enterOffline = () => {
+    continueOffline();
+    router.replace('/mode');
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.centerContent}>
@@ -22,7 +30,7 @@ export default function AuthGatewayScreen() {
         </View>
 
         <View style={styles.actions}>
-          <AppButton title="Continue offline" icon="sports-tennis" onPress={() => router.replace('/mode')} />
+          <AppButton title="Continue offline" icon="sports-tennis" onPress={enterOffline} />
           <AppButton title="Login" icon="login" variant="secondary" onPress={() => router.push(loginRoute)} />
           <AppButton
             title="Create account"
