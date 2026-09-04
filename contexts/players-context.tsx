@@ -34,6 +34,7 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
 
     async function loadPlayerSource() {
       setIsLoadingPlayers(true);
+      setHasLoadedPlayers(false);
 
       try {
         if (mode === 'loading') {
