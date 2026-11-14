@@ -23,6 +23,7 @@ import { AppModal } from "@/components/ui/app-modal";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { AppTheme } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
 import { usePlayers } from "@/contexts/players-context";
 import { Gender, Handedness, Player, PlayerFormValues } from "@/types/player";
 
@@ -39,6 +40,7 @@ const emptyForm: PlayerFormValues = {
 
 export default function PlayersScreen() {
   const insets = useSafeAreaInsets();
+  const { mode } = useAuth();
   const { players, isLoadingPlayers, addPlayer, updatePlayer, deletePlayer } =
     usePlayers();
   const [formVisible, setFormVisible] = useState(false);
@@ -140,6 +142,18 @@ export default function PlayersScreen() {
     );
   };
 
+  const openCoachChat = () => {
+    if (mode !== "authenticated") {
+      Alert.alert(
+        "Login required",
+        "Coach Chat is available when you login with an account.",
+      );
+      return;
+    }
+
+    router.push("/coach-chat");
+  };
+
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
@@ -159,10 +173,10 @@ export default function PlayersScreen() {
         </View>
         <Pressable
           style={styles.profileButton}
-          onPress={() => Alert.alert("Profile", "Profile screen coming soon.")}
+          onPress={openCoachChat}
         >
           <MaterialIcons
-            name="person"
+            name="forum"
             size={22}
             color={AppTheme.colors.textOnPrimary}
           />

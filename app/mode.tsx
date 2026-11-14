@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 export default function ScoreModeScreen() {
   const { mode, signOut } = useAuth();
+  const canUseCoachChat = mode === 'authenticated';
 
   const leaveMode = async () => {
     if (mode === 'authenticated') {
@@ -35,6 +36,34 @@ export default function ScoreModeScreen() {
       </View>
 
       <View style={styles.options}>
+        <AppCard style={[styles.optionCard, !canUseCoachChat && styles.disabledCard]}>
+          <Pressable
+            disabled={!canUseCoachChat}
+            style={styles.optionPressable}
+            onPress={() => router.push('/coach-chat')}>
+            <View style={[styles.optionIcon, !canUseCoachChat && styles.disabledIcon]}>
+              <MaterialIcons
+                name={canUseCoachChat ? 'forum' : 'lock'}
+                size={28}
+                color={canUseCoachChat ? AppTheme.colors.textOnPrimary : AppTheme.colors.textSubtle}
+              />
+            </View>
+            <View style={styles.optionContent}>
+              <Text style={[styles.optionTitle, !canUseCoachChat && styles.disabledText]}>Coach Chat</Text>
+              <Text style={styles.optionText}>
+                {canUseCoachChat
+                  ? 'Ask a coach for feedback on your service stats.'
+                  : 'Available when you login with an account.'}
+              </Text>
+            </View>
+            {canUseCoachChat ? (
+              <MaterialIcons name="chevron-right" size={25} color={AppTheme.colors.primary} />
+            ) : (
+              <Text style={styles.comingSoon}>Login</Text>
+            )}
+          </Pressable>
+        </AppCard>
+
         <AppCard style={styles.optionCard}>
           <Pressable style={styles.optionPressable} onPress={() => router.replace('/(tabs)')}>
             <View style={styles.optionIcon}>
