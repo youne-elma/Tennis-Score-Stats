@@ -72,6 +72,7 @@ export async function getOrCreateUserCoachThread(userId: string) {
   const existingThread = await loadOpenUserCoachThread(userId);
 
   if (existingThread) {
+    await addChatParticipant(existingThread.id, userId, 'user');
     return existingThread;
   }
 
@@ -110,18 +111,30 @@ export async function loadChatParticipants(threadId: string) {
 export async function addChatParticipant(threadId: string, userId: string, participantRole: UserRole) {
   const { data, error } = await supabase
     .from('chat_participants')
-    .upsert(
-      {
-        thread_id: threadId,
-        user_id: userId,
-        participant_role: participantRole,
-      },
-      { onConflict: 'thread_id,user_id' }
-    )
+    .insert({
+      thread_id: threadId,
+      user_id: userId,
+      participant_role: participantRole,
+    })
     .select(chatParticipantSelect)
     .single();
 
   if (error) {
+    if (error.code === '23505') {
+      const { data: existing, error: loadError } = await supabase
+        .from('chat_participants')
+        .select(chatParticipantSelect)
+        .eq('thread_id', threadId)
+        .eq('user_id', userId)
+        .single();
+
+      if (loadError) {
+        throw loadError;
+      }
+
+      return fromSupabaseChatParticipant(existing);
+    }
+
     throw error;
   }
 

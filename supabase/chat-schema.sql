@@ -1,6 +1,6 @@
 -- Tennis Score Stats coach chat schema.
 -- Run this after supabase/schema.sql and supabase/user-roles.sql.
--- RLS policies are intentionally kept for the next task.
+-- Run supabase/chat-rls.sql after this file to configure access policies.
 
 create extension if not exists pgcrypto;
 
@@ -41,6 +41,11 @@ create table if not exists public.chat_messages (
   constraint chat_messages_body_not_blank_check check (length(trim(body)) > 0)
 );
 
+-- Deny client access until the policies in chat-rls.sql have been installed.
+alter table public.chat_threads enable row level security;
+alter table public.chat_participants enable row level security;
+alter table public.chat_messages enable row level security;
+
 create index if not exists chat_threads_created_by_idx on public.chat_threads (created_by);
 create index if not exists chat_threads_assigned_coach_id_idx on public.chat_threads (assigned_coach_id);
 create index if not exists chat_threads_status_idx on public.chat_threads (status);
@@ -79,18 +84,19 @@ execute function public.handle_chat_updated_at();
 create or replace function public.handle_chat_message_created()
 returns trigger
 language plpgsql
-set search_path = public
+security definer
+set search_path = ''
 as $$
 begin
   update public.chat_threads
-  set
-    last_message_at = new.created_at,
-    updated_at = now()
+  set last_message_at = greatest(last_message_at, new.created_at)
   where id = new.thread_id;
 
   return new;
 end;
 $$;
+
+revoke execute on function public.handle_chat_message_created() from public, anon, authenticated;
 
 drop trigger if exists chat_messages_update_thread_last_message on public.chat_messages;
 
