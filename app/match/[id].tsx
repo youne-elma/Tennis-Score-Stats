@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import { AppToggle } from '@/components/ui/app-toggle';
 import { PlayerAvatar } from '@/components/ui/player-avatar';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { AppTheme } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 import { useMatches } from '@/contexts/matches-context';
 import { usePlayers } from '@/contexts/players-context';
 import {
@@ -25,8 +26,10 @@ import {
   TiebreakType,
 } from '@/types/match';
 import { Player } from '@/types/player';
+import { formatSharedMatchScore, type SharedMatchStats } from '@/utils/shared-match-stats';
+import { getOrCreateUserCoachThread, sendChatMessage } from '@/utils/supabase-chat';
 import { calculateTennisScore } from '@/utils/tennis-score';
-import { calculateMatchStats, PlayerMatchStats } from '@/utils/tennis-stats';
+import { calculateMatchStats, getMatchStatsSummary, PlayerMatchStats } from '@/utils/tennis-stats';
 
 type PendingService = {
   phase: ServePhase;
@@ -40,6 +43,8 @@ type ServiceDetailForm = {
   pointWinnerId: string;
 };
 
+type ShareStatsStatus = 'idle' | 'sending' | 'failed';
+
 const defaultServiceDetail: ServiceDetailForm = {
   serveType: 'Flat',
   zone: 'Wide',
@@ -50,6 +55,8 @@ const defaultServiceDetail: ServiceDetailForm = {
 export default function MatchScoringScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const navigation = useNavigation();
+  const { mode, user } = useAuth();
   const {
     matches,
     pauseMatch,
@@ -65,6 +72,8 @@ export default function MatchScoringScreen() {
   const [serviceDetail, setServiceDetail] = useState<ServiceDetailForm>(defaultServiceDetail);
   const [statsVisible, setStatsVisible] = useState(false);
   const [fullStatsVisible, setFullStatsVisible] = useState(false);
+  const [shareStatsStatus, setShareStatsStatus] = useState<ShareStatsStatus>('idle');
+  const shareInFlight = useRef(false);
   const [pauseVisible, setPauseVisible] = useState(false);
   const [pauseReason, setPauseReason] = useState('');
   const [editingEvent, setEditingEvent] = useState<ServiceEvent | null>(null);
@@ -114,6 +123,46 @@ export default function MatchScoringScreen() {
         </View>
       </SafeAreaView>
     );
+  }
+
+  async function shareMatchStats() {
+    if (shareInFlight.current || mode !== 'authenticated' || !user || !player1 || !player2 || !score || !stats) {
+      return;
+    }
+
+    const snapshot: SharedMatchStats = {
+      player1Name: formatPlayerName(player1),
+      player2Name: formatPlayerName(player2),
+      score: formatSharedMatchScore(score),
+      summary: getMatchStatsSummary(stats.player1, stats.player2),
+      details: buildMatchStatsBreakdown(player1, player2, stats.player1, stats.player2),
+    };
+
+    shareInFlight.current = true;
+    setShareStatsStatus('sending');
+    let threadId: string;
+    try {
+      const thread = await getOrCreateUserCoachThread(user.id);
+      await sendChatMessage({
+        threadId: thread.id,
+        senderId: user.id,
+        messageType: 'match_stats',
+        body: `Match stats · ${snapshot.player1Name} vs ${snapshot.player2Name}`,
+        metadata: { matchStats: snapshot },
+      });
+      threadId = thread.id;
+    } catch {
+      setShareStatsStatus('failed');
+      return;
+    } finally {
+      shareInFlight.current = false;
+    }
+
+    setShareStatsStatus('idle');
+    if (navigation.isFocused()) {
+      setStatsVisible(false);
+      router.push({ pathname: '/coach-chat', params: { threadId } });
+    }
   }
 
   const handleServiceAction = (phase: ServePhase, action: ServiceAction) => {
@@ -394,6 +443,8 @@ export default function MatchScoringScreen() {
           player1Stats={stats.player1}
           player2Stats={stats.player2}
           totalPoints={stats.totalPoints}
+          shareStatus={shareStatsStatus}
+          onShare={mode === 'authenticated' && user ? shareMatchStats : undefined}
           onOpenFullStats={() => {
             setStatsVisible(false);
             setFullStatsVisible(true);
@@ -693,6 +744,8 @@ function StatsModal({
   player1Stats,
   player2Stats,
   totalPoints,
+  shareStatus,
+  onShare,
   onOpenFullStats,
   onClose,
 }: {
@@ -702,6 +755,8 @@ function StatsModal({
   player1Stats: PlayerMatchStats;
   player2Stats: PlayerMatchStats;
   totalPoints: number;
+  shareStatus: ShareStatsStatus;
+  onShare?: () => void;
   onOpenFullStats: () => void;
   onClose: () => void;
 }) {
@@ -711,78 +766,29 @@ function StatsModal({
         <AppCard tone="gold" style={styles.statsSummaryCard}>
           <Text style={styles.sectionTitle}>Overview</Text>
           <Text style={styles.bodyText}>{totalPoints} point(s) recorded from service scoring.</Text>
+          {onShare ? (
+            <AppButton
+              title={shareStatus === 'sending' ? 'Sharing…' : 'Share with coach'}
+              icon="send"
+              disabled={shareStatus === 'sending'}
+              onPress={onShare}
+            />
+          ) : null}
+          {onShare && shareStatus === 'failed' ? (
+            <Text accessibilityRole="alert" style={styles.statsShareError}>
+              Could not share the match stats. Try again.
+            </Text>
+          ) : null}
         </AppCard>
 
-        <StatsComparisonRow
-          label="Points"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.pointsWon}`}
-          player2Value={`${player2Stats.pointsWon}`}
-        />
-        <StatsComparisonRow
-          label="Points Win %"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.pointsWinPercentage}%`}
-          player2Value={`${player2Stats.pointsWinPercentage}%`}
-        />
-        <StatsComparisonRow
-          label="First Serve %"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.firstServePercentage}%`}
-          player2Value={`${player2Stats.firstServePercentage}%`}
-        />
-        <StatsComparisonRow
-          label="Aces"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.aces}`}
-          player2Value={`${player2Stats.aces}`}
-        />
-        <StatsComparisonRow
-          label="Service Winners"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.serviceWinners}`}
-          player2Value={`${player2Stats.serviceWinners}`}
-        />
-        <StatsComparisonRow
-          label="Faults"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.faults}`}
-          player2Value={`${player2Stats.faults}`}
-        />
-        <StatsComparisonRow
-          label="Double Faults"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.doubleFaults}`}
-          player2Value={`${player2Stats.doubleFaults}`}
-        />
-        <StatsComparisonRow
-          label="1st Serve Points Won"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.firstServePointsWonPercentage}%`}
-          player2Value={`${player2Stats.firstServePointsWonPercentage}%`}
-        />
-        <StatsComparisonRow
-          label="2nd Serve Points Won"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.secondServePointsWonPercentage}%`}
-          player2Value={`${player2Stats.secondServePointsWonPercentage}%`}
-        />
-        <StatsComparisonRow
-          label="Break Points"
-          player1Name={player1.firstName}
-          player2Name={player2.firstName}
-          player1Value={`${player1Stats.breakPointsWon}/${player1Stats.breakPoints}`}
-          player2Value={`${player2Stats.breakPointsWon}/${player2Stats.breakPoints}`}
-        />
+        {getMatchStatsSummary(player1Stats, player2Stats).map((row) => (
+          <StatsComparisonRow
+            key={row.label}
+            player1Name={player1.firstName}
+            player2Name={player2.firstName}
+            {...row}
+          />
+        ))}
 
         <AppButton
           title="View full statistics"
@@ -1147,6 +1153,17 @@ function buildMatchStatsSheet(
     formatExportRow('Double Faults', player1, player2, `${player1Stats.doubleFaults}`, `${player2Stats.doubleFaults}`),
     formatExportRow('Break Points', player1, player2, `${player1Stats.breakPointsWon}/${player1Stats.breakPoints}`, `${player2Stats.breakPointsWon}/${player2Stats.breakPoints}`),
     '',
+    buildMatchStatsBreakdown(player1, player2, player1Stats, player2Stats),
+  ].join('\n');
+}
+
+function buildMatchStatsBreakdown(
+  player1: Player,
+  player2: Player,
+  player1Stats: PlayerMatchStats,
+  player2Stats: PlayerMatchStats
+) {
+  return [
     `${player1.firstName} - Service Type`,
     formatBreakdownRows(player1Stats.byServeType),
     '',
@@ -1552,6 +1569,10 @@ const styles = StyleSheet.create({
   },
   statsSummaryCard: {
     gap: 8,
+  },
+  statsShareError: {
+    color: AppTheme.colors.danger,
+    fontSize: 14,
   },
   statsRowCard: {
     gap: 12,

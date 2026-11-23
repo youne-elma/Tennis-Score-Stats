@@ -6,9 +6,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppCard } from '@/components/ui/app-card';
 import { AppTheme } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
+import { useCoachNotifications } from '@/contexts/coach-notifications-context';
 
 export default function ScoreModeScreen() {
   const { mode, signOut } = useAuth();
+  const { unreadReplies } = useCoachNotifications();
   const canUseCoachChat = mode === 'authenticated';
 
   const leaveMode = async () => {
@@ -55,6 +57,7 @@ export default function ScoreModeScreen() {
                   ? 'Ask a coach for feedback on your service stats.'
                   : 'Available when you login with an account.'}
               </Text>
+              {unreadReplies.length > 0 ? <Text style={styles.comingSoon}>New reply</Text> : null}
             </View>
             {canUseCoachChat ? (
               <MaterialIcons name="chevron-right" size={25} color={AppTheme.colors.primary} />

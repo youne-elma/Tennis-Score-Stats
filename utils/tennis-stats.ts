@@ -39,6 +39,33 @@ export type MatchStats = {
   totalPoints: number;
 };
 
+export type MatchStatsSummaryRow = {
+  label: string;
+  player1Value: string;
+  player2Value: string;
+};
+
+const summaryMetrics: { label: string; format: (stats: PlayerMatchStats) => string }[] = [
+  { label: 'Points', format: (stats) => String(stats.pointsWon) },
+  { label: 'Points Win %', format: (stats) => `${stats.pointsWinPercentage}%` },
+  { label: 'First Serve %', format: (stats) => `${stats.firstServePercentage}%` },
+  { label: 'Aces', format: (stats) => String(stats.aces) },
+  { label: 'Service Winners', format: (stats) => String(stats.serviceWinners) },
+  { label: 'Faults', format: (stats) => String(stats.faults) },
+  { label: 'Double Faults', format: (stats) => String(stats.doubleFaults) },
+  { label: '1st Serve Points Won', format: (stats) => `${stats.firstServePointsWonPercentage}%` },
+  { label: '2nd Serve Points Won', format: (stats) => `${stats.secondServePointsWonPercentage}%` },
+  { label: 'Break Points', format: (stats) => `${stats.breakPointsWon}/${stats.breakPoints}` },
+];
+
+export function getMatchStatsSummary(player1: PlayerMatchStats, player2: PlayerMatchStats): MatchStatsSummaryRow[] {
+  return summaryMetrics.map(({ label, format }) => ({
+    label,
+    player1Value: format(player1),
+    player2Value: format(player2),
+  }));
+}
+
 export function calculateMatchStats(match: TennisMatch): MatchStats {
   const player1 = createPlayerStats(match.player1Id);
   const player2 = createPlayerStats(match.player2Id);

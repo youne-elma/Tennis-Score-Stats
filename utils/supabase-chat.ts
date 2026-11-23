@@ -1,5 +1,5 @@
 import { requireSupabase } from '@/lib/supabase';
-import { ChatMessage, ChatMessageInput, ChatParticipant, ChatThread, UserRole } from '@/types/chat';
+import { ChatMessage, ChatMessageInput, ChatParticipant, ChatThread, UnreadCoachReply, UserRole } from '@/types/chat';
 
 type SupabaseChatThreadRow = {
   id: string;
@@ -55,6 +55,20 @@ export async function loadUserRole(userId: string) {
   return (data?.role ?? 'user') as UserRole;
 }
 
+export async function loadChatThread(threadId: string) {
+  const { data, error } = await requireSupabase()
+    .from('chat_threads')
+    .select(chatThreadSelect)
+    .eq('id', threadId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data ? fromSupabaseChatThread(data) : null;
+}
+
 export async function loadChatThreads() {
   const { data, error } = await requireSupabase()
     .from('chat_threads')
@@ -70,6 +84,35 @@ export async function loadChatThreads() {
   }
 
   return (data ?? []).map(fromSupabaseChatThread);
+}
+
+export async function loadUnreadCoachReplies(userId: string): Promise<UnreadCoachReply[]> {
+  const { data, error } = await requireSupabase()
+    .from('chat_threads')
+    .select('id,coach_replies:chat_messages!inner(id,created_at),viewer:chat_participants(last_read_at)')
+    .eq('created_by', userId)
+    .neq('coach_replies.sender_id', userId)
+    .eq('viewer.user_id', userId)
+    .order('created_at', { ascending: false, referencedTable: 'coach_replies' })
+    .order('id', { ascending: false, referencedTable: 'coach_replies' })
+    .limit(1, { referencedTable: 'coach_replies' });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? [])
+    .flatMap((thread) => {
+      const reply = thread.coach_replies[0];
+      const lastReadAt = thread.viewer[0]?.last_read_at;
+
+      if (!reply || (lastReadAt && compareChatTimestamps(reply.created_at, lastReadAt) <= 0)) {
+        return [];
+      }
+
+      return [{ id: reply.id, threadId: thread.id, createdAt: reply.created_at }];
+    })
+    .sort((left, right) => compareChatTimestamps(right.createdAt, left.createdAt));
 }
 
 export async function getOrCreateUserCoachThread(userId: string) {
@@ -175,20 +218,41 @@ export async function sendChatMessage(message: ChatMessageInput) {
   return fromSupabaseChatMessage(data);
 }
 
-export async function markChatThreadRead(threadId: string, userId: string) {
-  const { data, error } = await requireSupabase()
+export async function markChatThreadRead(threadId: string, userId: string, readThrough: string) {
+  const supabase = requireSupabase();
+  const { data: participant, error: participantError } = await supabase
     .from('chat_participants')
-    .update({ last_read_at: new Date().toISOString() })
+    .select('last_read_at')
     .eq('thread_id', threadId)
     .eq('user_id', userId)
-    .select(chatParticipantSelect)
-    .single();
+    .maybeSingle();
+
+  if (participantError) {
+    throw participantError;
+  }
+
+  if (!participant) {
+    await addChatParticipant(threadId, userId, 'user');
+  } else if (participant.last_read_at && compareChatTimestamps(readThrough, participant.last_read_at) <= 0) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('chat_participants')
+    .update({ last_read_at: readThrough })
+    .eq('thread_id', threadId)
+    .eq('user_id', userId)
+    .or(`last_read_at.is.null,last_read_at.lt.${readThrough}`);
 
   if (error) {
     throw error;
   }
+}
 
-  return fromSupabaseChatParticipant(data);
+function compareChatTimestamps(left: string, right: string) {
+  // Postgres keeps sub-millisecond precision that Date.parse drops.
+  return Date.parse(left) - Date.parse(right)
+    || Number(left.match(/\.\d+/)?.[0] ?? 0) - Number(right.match(/\.\d+/)?.[0] ?? 0);
 }
 
 export async function closeChatThread(threadId: string) {

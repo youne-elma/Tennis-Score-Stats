@@ -44,3 +44,9 @@ export type ChatMessageInput = {
   messageType?: ChatMessageType;
   metadata?: Record<string, unknown>;
 };
+
+export type UnreadCoachReply = {
+  id: string;
+  threadId: string;
+  createdAt: string;
+};

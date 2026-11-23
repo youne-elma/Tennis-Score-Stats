@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { useState } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -24,6 +25,7 @@ import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { AppTheme } from "@/constants/theme";
 import { useAuth } from "@/contexts/auth-context";
+import { useCoachNotifications } from "@/contexts/coach-notifications-context";
 import { usePlayers } from "@/contexts/players-context";
 import { Gender, Handedness, Player, PlayerFormValues } from "@/types/player";
 
@@ -41,6 +43,8 @@ const emptyForm: PlayerFormValues = {
 export default function PlayersScreen() {
   const insets = useSafeAreaInsets();
   const { mode } = useAuth();
+  const { unreadReplies } = useCoachNotifications();
+  const hasUnreadReply = unreadReplies.length > 0;
   const { players, isLoadingPlayers, addPlayer, updatePlayer, deletePlayer } =
     usePlayers();
   const [formVisible, setFormVisible] = useState(false);
@@ -172,6 +176,8 @@ export default function PlayersScreen() {
           <Text style={styles.title}>Players</Text>
         </View>
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={hasUnreadReply ? "Coach Chat, new reply" : "Coach Chat"}
           style={styles.profileButton}
           onPress={openCoachChat}
         >
@@ -180,6 +186,7 @@ export default function PlayersScreen() {
             size={22}
             color={AppTheme.colors.textOnPrimary}
           />
+          {hasUnreadReply ? <View style={styles.unreadDot} /> : null}
         </Pressable>
       </View>
 
@@ -335,7 +342,8 @@ export default function PlayersScreen() {
             <Text style={styles.fieldLabel}>Birthday date</Text>
             <Pressable
               style={styles.datePickerButton}
-              onPress={() => setBirthdayPickerVisible(true)}
+              onPress={Platform.OS === "web" ? undefined : () => setBirthdayPickerVisible(true)}
+              tabIndex={Platform.OS === "web" ? -1 : undefined}
             >
               <View>
                 <Text
@@ -353,6 +361,36 @@ export default function PlayersScreen() {
                 size={22}
                 color={AppTheme.colors.primary}
               />
+              {Platform.OS === "web" ? (
+                <input
+                  aria-label="Birthday date"
+                  type="date"
+                  value={form.birthdayDate}
+                  max={formatBirthdayDate(new Date())}
+                  onChange={({ currentTarget: { value: birthdayDate } }) => {
+                    setForm((current) => ({ ...current, birthdayDate }));
+                  }}
+                  onClick={(event) => {
+                    try {
+                      if (event.currentTarget.showPicker) {
+                        event.currentTarget.showPicker();
+                        event.preventDefault();
+                      }
+                    } catch {
+                      // Fall back to the date input's default browser behavior.
+                    }
+                  }}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    boxSizing: "border-box",
+                    opacity: 0,
+                    cursor: "pointer",
+                  }}
+                />
+              ) : null}
             </Pressable>
 
             {birthdayPickerVisible ? (
@@ -440,9 +478,11 @@ function isValidBirthdayDate(value: string) {
     return false;
   }
 
-  const date = new Date(`${value}T00:00:00`);
+  const isWeb = Platform.OS === "web";
+  const date = new Date(`${value}T00:00:00${isWeb ? "Z" : ""}`);
+  const isFuture = isWeb ? value > formatBirthdayDate(new Date()) : date > new Date();
 
-  if (Number.isNaN(date.getTime()) || date > new Date()) {
+  if (Number.isNaN(date.getTime()) || isFuture) {
     return false;
   }
 
@@ -504,6 +544,17 @@ const styles = StyleSheet.create({
     height: 42,
     justifyContent: "center",
     width: 42,
+  },
+  unreadDot: {
+    backgroundColor: AppTheme.colors.danger,
+    borderColor: AppTheme.colors.background,
+    borderRadius: AppTheme.radii.pill,
+    borderWidth: 2,
+    height: 12,
+    position: "absolute",
+    right: -2,
+    top: -2,
+    width: 12,
   },
   kicker: {
     color: AppTheme.colors.textSubtle,

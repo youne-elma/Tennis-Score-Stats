@@ -42,6 +42,8 @@ For a new Supabase database, run `schema.sql`, `rls.sql`, `auth-trigger.sql`, `u
 
 Open **Coach Chat** with a regular account to start a conversation. Give the coach's Auth user the `coach` role in the `user_roles` table to let them open the inbox and reply.
 
+From **Match stats**, choose **Share with coach** to post a copy of the score and service statistics in Coach Chat.
+
 Open conversations refresh automatically. To enable immediate delivery, add `chat_messages` to the `supabase_realtime` publication in your Supabase project.
 
 ## Get a fresh project

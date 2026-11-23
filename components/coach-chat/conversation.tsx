@@ -2,25 +2,49 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { MatchStatsMessage } from '@/components/coach-chat/match-stats-message';
 import { AppButton } from '@/components/ui/app-button';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
+import { useCoachNotifications } from '@/contexts/coach-notifications-context';
 import { useChatQuery } from '@/hooks/use-chat-query';
 import type { ChatThread } from '@/types/chat';
+import { readSharedMatchStats } from '@/utils/shared-match-stats';
 import { loadChatMessages, sendChatMessage, subscribeToChatMessages } from '@/utils/supabase-chat';
 
 export function CoachConversation({ thread, userId }: { thread: ChatThread; userId: string }) {
   const { id: threadId, createdBy, status } = thread;
+  const { isAppActive, markReplyRead } = useCoachNotifications();
   const loadMessages = useCallback(() => loadChatMessages(threadId), [threadId]);
   const { data: messages, loadFailed, refresh } = useChatQuery(loadMessages);
   const [draft, setDraft] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [sendFailed, setSendFailed] = useState(false);
   const scrollView = useRef<ScrollView>(null);
+  const lastScrolledMessage = useRef<string | undefined>(undefined);
+  const lastReadAttempt = useRef<string | undefined>(undefined);
+  const lastMessageId = messages?.at(-1)?.id;
+  const latestCoachReply = createdBy === userId ? messages?.findLast((message) => message.senderId !== userId) : undefined;
   const body = draft.trim();
 
   useFocusEffect(
     useCallback(() => subscribeToChatMessages(threadId, refresh), [threadId, refresh])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAppActive || !latestCoachReply || lastReadAttempt.current === latestCoachReply.createdAt) {
+        return;
+      }
+
+      const readThrough = latestCoachReply.createdAt;
+      lastReadAttempt.current = readThrough;
+      void markReplyRead(threadId, readThrough).catch(() => {
+        if (lastReadAttempt.current === readThrough) {
+          lastReadAttempt.current = undefined;
+        }
+      });
+    }, [isAppActive, latestCoachReply, markReplyRead, threadId])
   );
 
   async function sendMessage() {
@@ -55,17 +79,25 @@ export function CoachConversation({ thread, userId }: { thread: ChatThread; user
         style={styles.history}
         contentContainerStyle={styles.historyContent}
         keyboardShouldPersistTaps="handled"
-        onContentSizeChange={() => scrollView.current?.scrollToEnd({ animated: false })}>
+        onContentSizeChange={() => {
+          if (lastMessageId && lastMessageId !== lastScrolledMessage.current) {
+            lastScrolledMessage.current = lastMessageId;
+            scrollView.current?.scrollToEnd({ animated: false });
+          }
+        }}>
         {messages?.length === 0 ? <Text style={styles.status}>No messages yet.</Text> : null}
         {!messages && !loadFailed ? <Text style={styles.status}>Loading messages…</Text> : null}
         {messages?.map((message) => {
           const isOwnMessage = message.senderId === userId;
           const sender = isOwnMessage ? 'You' : message.senderId === createdBy ? 'Player' : 'Coach';
+          const matchStats = message.messageType === 'match_stats'
+            ? readSharedMatchStats(message.metadata?.matchStats)
+            : undefined;
 
           return (
-            <View key={message.id} style={[styles.message, isOwnMessage && styles.ownMessage]}>
+            <View key={message.id} style={[styles.message, isOwnMessage && styles.ownMessage, matchStats && styles.statsMessage]}>
               <Text style={styles.sender}>{sender}</Text>
-              <Text style={styles.body}>{message.body}</Text>
+              {matchStats ? <MatchStatsMessage stats={matchStats} /> : <Text style={styles.body}>{message.body}</Text>}
               <Text style={styles.time}>
                 {new Date(message.createdAt).toLocaleString(undefined, {
                   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -133,6 +165,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     backgroundColor: AppTheme.colors.primaryWash,
     borderColor: AppTheme.colors.borderGold,
+  },
+  statsMessage: {
+    maxWidth: 480,
+    width: '92%',
   },
   sender: {
     color: AppTheme.colors.primary,

@@ -1,5 +1,5 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,15 +9,24 @@ import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
 import { AppTheme } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
+import { useCoachNotifications } from '@/contexts/coach-notifications-context';
 import { useChatQuery } from '@/hooks/use-chat-query';
-import type { ChatThread } from '@/types/chat';
-import { getOrCreateUserCoachThread, loadChatThreads, loadUserRole } from '@/utils/supabase-chat';
+import { getOrCreateUserCoachThread, loadChatThread, loadChatThreads, loadUserRole } from '@/utils/supabase-chat';
 
 export default function CoachChatScreen() {
   const { mode, user, isLoading } = useAuth();
+  const { threadId } = useLocalSearchParams<{ threadId?: string }>();
 
   if (mode === 'authenticated' && user) {
-    return <SignedInCoachChat key={user.id} userId={user.id} />;
+    if (typeof threadId === 'string' && threadId) {
+      return <CoachThread key={`${user.id}:${threadId}`} userId={user.id} threadId={threadId} />;
+    }
+
+    return (
+      <ChatLayout title="Coach Chat" backLabel="Go back" onBack={exitChat}>
+        <CoachInbox key={user.id} userId={user.id} onOpen={(id) => router.setParams({ threadId: id })} />
+      </ChatLayout>
+    );
   }
 
   return (
@@ -37,24 +46,35 @@ export default function CoachChatScreen() {
   );
 }
 
-function SignedInCoachChat({ userId }: { userId: string }) {
-  const [thread, setThread] = useState<ChatThread | null>(null);
+function CoachThread({ threadId, userId }: { threadId: string; userId: string }) {
+  const loadThread = useCallback(() => loadChatThread(threadId), [threadId]);
+  const { data: thread, loadFailed, refresh } = useChatQuery(loadThread);
 
   return (
     <ChatLayout
       title={thread?.subject || 'Coach Chat'}
-      backLabel={thread ? 'Back to conversations' : 'Go back'}
-      onBack={thread ? () => setThread(null) : exitChat}>
+      backLabel="Back to conversations"
+      onBack={() => router.setParams({ threadId: undefined })}>
       {thread ? (
-        <CoachConversation key={thread.id} thread={thread} userId={userId} />
+        <CoachConversation thread={thread} userId={userId} />
       ) : (
-        <CoachInbox userId={userId} onOpen={setThread} />
+        <View style={styles.centered}>
+          {loadFailed ? (
+            <AppCard tone="muted" style={styles.feedbackCard}>
+              <Text accessibilityRole="alert" style={styles.error}>Could not load the conversation.</Text>
+              <AppButton title="Try again" variant="secondary" onPress={refresh} />
+            </AppCard>
+          ) : (
+            <Text style={styles.status}>{thread === null ? 'Conversation unavailable.' : 'Loading conversation…'}</Text>
+          )}
+        </View>
       )}
     </ChatLayout>
   );
 }
 
-function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (thread: ChatThread) => void }) {
+function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: string) => void }) {
+  const { unreadReplies } = useCoachNotifications();
   const loadInbox = useCallback(async () => {
     const [role, threads] = await Promise.all([loadUserRole(userId), loadChatThreads()]);
     return { role, threads: role === 'user' ? threads.filter((thread) => thread.createdBy === userId) : threads };
@@ -72,7 +92,8 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (thread: ChatT
     setIsOpening(true);
     setOpenFailed(false);
     try {
-      onOpen(await getOrCreateUserCoachThread(userId));
+      const thread = await getOrCreateUserCoachThread(userId);
+      onOpen(thread.id);
     } catch {
       setOpenFailed(true);
       refresh();
@@ -104,11 +125,14 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (thread: ChatT
         <Text accessibilityRole="alert" style={styles.error}>Could not start the conversation. Try again.</Text>
       ) : null}
       {inbox?.threads.map((thread) => (
-        <Pressable key={thread.id} accessibilityRole="button" disabled={isOpening} onPress={() => onOpen(thread)}>
+        <Pressable key={thread.id} accessibilityRole="button" disabled={isOpening} onPress={() => onOpen(thread.id)}>
           <AppCard style={styles.threadCard}>
             <View style={styles.threadDetails}>
               <Text numberOfLines={1} style={styles.threadTitle}>{thread.subject || 'Coach chat'}</Text>
               <Text numberOfLines={2} style={styles.status}>{thread.lastMessagePreview || 'No messages yet'}</Text>
+              {unreadReplies.some((reply) => reply.threadId === thread.id) ? (
+                <Text style={styles.unread}>New reply</Text>
+              ) : null}
               <Text style={styles.time}>
                 {new Date(thread.lastMessageAt ?? thread.createdAt).toLocaleString(undefined, {
                   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -236,6 +260,11 @@ const styles = StyleSheet.create({
   threadTitle: {
     color: AppTheme.colors.text,
     fontSize: 16,
+    fontWeight: '800',
+  },
+  unread: {
+    color: AppTheme.colors.primary,
+    fontSize: 12,
     fontWeight: '800',
   },
   time: {
