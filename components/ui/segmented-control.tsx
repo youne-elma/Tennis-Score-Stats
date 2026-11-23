@@ -23,13 +23,15 @@ export function SegmentedControl<T extends string>({
   return (
     <View style={styles.group}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View style={styles.control}>
+      <View role="radiogroup" aria-label={label} style={styles.control}>
         {options.map((option) => {
           const selected = option.value === value;
 
           return (
             <Pressable
               key={option.value}
+              role="radio"
+              aria-checked={selected}
               style={[styles.option, selected && styles.optionSelected]}
               onPress={() => onChange(option.value)}>
               <Text style={[styles.optionText, selected && styles.optionTextSelected]}>

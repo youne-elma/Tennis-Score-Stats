@@ -8,7 +8,7 @@ type SupabaseChatThreadRow = {
   status: ChatThread['status'];
   subject: string | null;
   last_message_at: string | null;
-  chat_messages?: { body: string }[];
+  chat_messages?: { body: string; sender_id: string }[];
   closed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -72,7 +72,7 @@ export async function loadChatThread(threadId: string) {
 export async function loadChatThreads() {
   const { data, error } = await requireSupabase()
     .from('chat_threads')
-    .select(`${chatThreadSelect},chat_messages(body)`)
+    .select(`${chatThreadSelect},chat_messages(body,sender_id)`)
     .order('created_at', { ascending: false, referencedTable: 'chat_messages' })
     .order('id', { ascending: false, referencedTable: 'chat_messages' })
     .limit(1, { referencedTable: 'chat_messages' })
@@ -314,6 +314,8 @@ async function loadOpenUserCoachThread(userId: string) {
 }
 
 function fromSupabaseChatThread(row: SupabaseChatThreadRow): ChatThread {
+  const lastMessage = row.chat_messages?.[0];
+
   return {
     id: row.id,
     createdBy: row.created_by,
@@ -321,7 +323,8 @@ function fromSupabaseChatThread(row: SupabaseChatThreadRow): ChatThread {
     status: row.status,
     subject: row.subject ?? undefined,
     lastMessageAt: row.last_message_at ?? undefined,
-    lastMessagePreview: row.chat_messages?.[0]?.body,
+    lastMessagePreview: lastMessage?.body,
+    lastMessageSenderId: lastMessage?.sender_id,
     closedAt: row.closed_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -7,15 +7,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CoachConversation } from '@/components/coach-chat/conversation';
 import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { AppTheme } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { useCoachNotifications } from '@/contexts/coach-notifications-context';
 import { useChatQuery } from '@/hooks/use-chat-query';
 import { getOrCreateUserCoachThread, loadChatThread, loadChatThreads, loadUserRole } from '@/utils/supabase-chat';
 
+type InboxFilter = 'all' | 'needs-reply';
+
 export default function CoachChatScreen() {
   const { mode, user, isLoading } = useAuth();
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
+  const [inboxFilter, setInboxFilter] = useState<InboxFilter>('all');
 
   if (mode === 'authenticated' && user) {
     if (typeof threadId === 'string' && threadId) {
@@ -24,7 +28,13 @@ export default function CoachChatScreen() {
 
     return (
       <ChatLayout title="Coach Chat" backLabel="Go back" onBack={exitChat}>
-        <CoachInbox key={user.id} userId={user.id} onOpen={(id) => router.setParams({ threadId: id })} />
+        <CoachInbox
+          key={user.id}
+          userId={user.id}
+          filter={inboxFilter}
+          onFilterChange={setInboxFilter}
+          onOpen={(id) => router.setParams({ threadId: id })}
+        />
       </ChatLayout>
     );
   }
@@ -73,7 +83,14 @@ function CoachThread({ threadId, userId }: { threadId: string; userId: string })
   );
 }
 
-function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: string) => void }) {
+function CoachInbox({
+  userId, filter, onFilterChange, onOpen,
+}: {
+  userId: string;
+  filter: InboxFilter;
+  onFilterChange: (filter: InboxFilter) => void;
+  onOpen: (threadId: string) => void;
+}) {
   const { unreadReplies } = useCoachNotifications();
   const loadInbox = useCallback(async () => {
     const [role, threads] = await Promise.all([loadUserRole(userId), loadChatThreads()]);
@@ -82,7 +99,14 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: str
   const { data: inbox, loadFailed, refresh } = useChatQuery(loadInbox);
   const [isOpening, setIsOpening] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
-  const canStart = inbox?.role === 'user' && !inbox.threads.some((thread) => thread.status === 'open');
+  const threads = inbox?.threads ?? [];
+  const canManageInbox = inbox?.role === 'coach' || inbox?.role === 'admin';
+  const threadsNeedingReply = threads.filter(
+    (thread) => thread.status === 'open' && thread.lastMessageSenderId === thread.createdBy
+  );
+  const showNeedsReply = canManageInbox && filter === 'needs-reply';
+  const visibleThreads = showNeedsReply ? threadsNeedingReply : threads;
+  const canStart = inbox?.role === 'user' && !threads.some((thread) => thread.status === 'open');
 
   async function openConversation() {
     if (isOpening) {
@@ -105,6 +129,16 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: str
   return (
     <ScrollView contentContainerStyle={styles.inbox}>
       <Text accessibilityRole="header" style={styles.heading}>Conversations</Text>
+      {canManageInbox ? (
+        <SegmentedControl<InboxFilter>
+          options={[
+            { label: 'All', value: 'all' },
+            { label: `Needs reply (${threadsNeedingReply.length})`, value: 'needs-reply' },
+          ]}
+          value={filter}
+          onChange={onFilterChange}
+        />
+      ) : null}
       {loadFailed ? (
         <AppCard tone="muted" style={styles.feedbackCard}>
           <Text accessibilityRole="alert" style={styles.error}>Could not load conversations.</Text>
@@ -112,7 +146,9 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: str
         </AppCard>
       ) : null}
       {!inbox && !loadFailed ? <Text style={styles.status}>Loading conversations…</Text> : null}
-      {inbox?.threads.length === 0 ? <Text style={styles.status}>No conversations yet.</Text> : null}
+      {inbox && visibleThreads.length === 0 ? (
+        <Text style={styles.status}>{showNeedsReply ? 'No conversations need a reply.' : 'No conversations yet.'}</Text>
+      ) : null}
       {canStart ? (
         <AppButton
           title={isOpening ? 'Opening…' : 'Start conversation'}
@@ -124,7 +160,7 @@ function CoachInbox({ userId, onOpen }: { userId: string; onOpen: (threadId: str
       {openFailed ? (
         <Text accessibilityRole="alert" style={styles.error}>Could not start the conversation. Try again.</Text>
       ) : null}
-      {inbox?.threads.map((thread) => (
+      {visibleThreads.map((thread) => (
         <Pressable key={thread.id} accessibilityRole="button" disabled={isOpening} onPress={() => onOpen(thread.id)}>
           <AppCard style={styles.threadCard}>
             <View style={styles.threadDetails}>

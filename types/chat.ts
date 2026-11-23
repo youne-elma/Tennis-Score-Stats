@@ -12,6 +12,7 @@ export type ChatThread = {
   subject?: string;
   lastMessageAt?: string;
   lastMessagePreview?: string;
+  lastMessageSenderId?: string;
   closedAt?: string;
   createdAt: string;
   updatedAt: string;
