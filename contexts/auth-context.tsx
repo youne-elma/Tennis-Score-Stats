@@ -1,7 +1,7 @@
 import { Session, User } from '@supabase/supabase-js';
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
-import { supabase } from '@/lib/supabase';
+import { requireSupabase, supabase } from '@/lib/supabase';
 
 type AuthMode = 'loading' | 'offline' | 'authenticated' | 'guest';
 
@@ -22,9 +22,13 @@ const emailAlreadyRegisteredCode = 'auth/email-already-registered';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [mode, setMode] = useState<AuthMode>('loading');
+  const [mode, setMode] = useState<AuthMode>(supabase ? 'loading' : 'guest');
 
   useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
     let isMounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
@@ -59,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setMode('offline');
       },
       signIn: async (email: string, password: string) => {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await requireSupabase().auth.signInWithPassword({
           email,
           password,
         });
@@ -69,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signUp: async (name: string, email: string, password: string) => {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await requireSupabase().auth.signUp({
           email,
           password,
           options: {
@@ -95,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { needsEmailConfirmation: !data.session };
       },
       signOut: async () => {
-        await supabase.auth.signOut();
+        await supabase?.auth.signOut();
         setMode('guest');
       },
     }),

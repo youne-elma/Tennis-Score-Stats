@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { requireSupabase } from '@/lib/supabase';
 import {
   DeuceScoring,
   GamesPerSet,
@@ -49,6 +49,7 @@ const serviceEventSelect =
   'id,user_id,match_id,server_id,phase,action,serve_type,zone,fault_type,point_winner_id,created_at';
 
 export async function loadSupabaseMatches(userId: string) {
+  const supabase = requireSupabase();
   const { data: matchRows, error: matchesError } = await supabase
     .from('matches')
     .select(matchSelect)
@@ -91,7 +92,7 @@ export async function loadSupabaseMatches(userId: string) {
 }
 
 export async function createSupabaseMatch(userId: string, match: MatchFormValues) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('matches')
     .insert(toSupabaseMatchInput(userId, match))
     .select(matchSelect)
@@ -105,7 +106,7 @@ export async function createSupabaseMatch(userId: string, match: MatchFormValues
 }
 
 export async function updateSupabaseMatch(id: string, userId: string, match: Partial<MatchFormValues> & Partial<TennisMatch>) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('matches')
     .update(toSupabaseMatchUpdate(match))
     .eq('id', id)
@@ -121,7 +122,7 @@ export async function updateSupabaseMatch(id: string, userId: string, match: Par
 }
 
 export async function createSupabaseServiceEvent(userId: string, event: ServiceEventInput) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('service_events')
     .insert(toSupabaseServiceEventInput(userId, event))
     .select(serviceEventSelect)
@@ -140,7 +141,7 @@ export async function updateSupabaseServiceEvent(
   userId: string,
   event: Partial<ServiceEvent>
 ) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('service_events')
     .update(toSupabaseServiceEventUpdate(event))
     .eq('id', eventId)
@@ -157,7 +158,7 @@ export async function updateSupabaseServiceEvent(
 }
 
 export async function deleteSupabaseServiceEvent(matchId: string, eventId: string, userId: string) {
-  const { error } = await supabase
+  const { error } = await requireSupabase()
     .from('service_events')
     .delete()
     .eq('id', eventId)

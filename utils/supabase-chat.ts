@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { requireSupabase } from '@/lib/supabase';
 import { ChatMessage, ChatMessageInput, ChatParticipant, ChatThread, UserRole } from '@/types/chat';
 
 type SupabaseChatThreadRow = {
@@ -8,6 +8,7 @@ type SupabaseChatThreadRow = {
   status: ChatThread['status'];
   subject: string | null;
   last_message_at: string | null;
+  chat_messages?: { body: string }[];
   closed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -41,7 +42,7 @@ const chatParticipantSelect = 'thread_id,user_id,participant_role,joined_at,last
 const chatMessageSelect = 'id,thread_id,sender_id,message_type,body,metadata,read_at,created_at,updated_at';
 
 export async function loadUserRole(userId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('user_roles')
     .select('role')
     .eq('user_id', userId)
@@ -55,9 +56,12 @@ export async function loadUserRole(userId: string) {
 }
 
 export async function loadChatThreads() {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_threads')
-    .select(chatThreadSelect)
+    .select(`${chatThreadSelect},chat_messages(body)`)
+    .order('created_at', { ascending: false, referencedTable: 'chat_messages' })
+    .order('id', { ascending: false, referencedTable: 'chat_messages' })
+    .limit(1, { referencedTable: 'chat_messages' })
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
 
@@ -76,7 +80,7 @@ export async function getOrCreateUserCoachThread(userId: string) {
     return existingThread;
   }
 
-  const { data: threadRow, error: threadError } = await supabase
+  const { data: threadRow, error: threadError } = await requireSupabase()
     .from('chat_threads')
     .insert({
       created_by: userId,
@@ -95,7 +99,7 @@ export async function getOrCreateUserCoachThread(userId: string) {
 }
 
 export async function loadChatParticipants(threadId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_participants')
     .select(chatParticipantSelect)
     .eq('thread_id', threadId)
@@ -109,6 +113,7 @@ export async function loadChatParticipants(threadId: string) {
 }
 
 export async function addChatParticipant(threadId: string, userId: string, participantRole: UserRole) {
+  const supabase = requireSupabase();
   const { data, error } = await supabase
     .from('chat_participants')
     .insert({
@@ -142,11 +147,12 @@ export async function addChatParticipant(threadId: string, userId: string, parti
 }
 
 export async function loadChatMessages(threadId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_messages')
     .select(chatMessageSelect)
     .eq('thread_id', threadId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
 
   if (error) {
     throw error;
@@ -156,7 +162,7 @@ export async function loadChatMessages(threadId: string) {
 }
 
 export async function sendChatMessage(message: ChatMessageInput) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_messages')
     .insert(toSupabaseChatMessageInput(message))
     .select(chatMessageSelect)
@@ -170,7 +176,7 @@ export async function sendChatMessage(message: ChatMessageInput) {
 }
 
 export async function markChatThreadRead(threadId: string, userId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_participants')
     .update({ last_read_at: new Date().toISOString() })
     .eq('thread_id', threadId)
@@ -186,7 +192,7 @@ export async function markChatThreadRead(threadId: string, userId: string) {
 }
 
 export async function closeChatThread(threadId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_threads')
     .update({
       status: 'closed',
@@ -204,6 +210,7 @@ export async function closeChatThread(threadId: string) {
 }
 
 export function subscribeToChatMessages(threadId: string, onMessage: (message: ChatMessage) => void) {
+  const supabase = requireSupabase();
   const channel = supabase
     .channel(`chat-messages:${threadId}`)
     .on(
@@ -226,7 +233,7 @@ export function subscribeToChatMessages(threadId: string, onMessage: (message: C
 }
 
 async function loadOpenUserCoachThread(userId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('chat_threads')
     .select(chatThreadSelect)
     .eq('created_by', userId)
@@ -250,6 +257,7 @@ function fromSupabaseChatThread(row: SupabaseChatThreadRow): ChatThread {
     status: row.status,
     subject: row.subject ?? undefined,
     lastMessageAt: row.last_message_at ?? undefined,
+    lastMessagePreview: row.chat_messages?.[0]?.body,
     closedAt: row.closed_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { requireSupabase } from '@/lib/supabase';
 import { Player, PlayerFormValues } from '@/types/player';
 
 type SupabasePlayerRow = {
@@ -15,7 +15,7 @@ type SupabasePlayerRow = {
 };
 
 export async function loadSupabasePlayers(userId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('players')
     .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url')
     .eq('user_id', userId)
@@ -29,7 +29,7 @@ export async function loadSupabasePlayers(userId: string) {
 }
 
 export async function createSupabasePlayer(userId: string, player: PlayerFormValues) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('players')
     .insert(toSupabasePlayerInput(userId, player))
     .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url')
@@ -43,7 +43,7 @@ export async function createSupabasePlayer(userId: string, player: PlayerFormVal
 }
 
 export async function updateSupabasePlayer(id: string, userId: string, player: PlayerFormValues) {
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('players')
     .update(toSupabasePlayerInput(userId, player))
     .eq('id', id)
@@ -59,7 +59,7 @@ export async function updateSupabasePlayer(id: string, userId: string, player: P
 }
 
 export async function deleteSupabasePlayer(id: string, userId: string) {
-  const { error } = await supabase.from('players').delete().eq('id', id).eq('user_id', userId);
+  const { error } = await requireSupabase().from('players').delete().eq('id', id).eq('user_id', userId);
 
   if (error) {
     throw error;
@@ -78,7 +78,7 @@ export async function syncLocalPlayersToSupabase(userId: string, players: Player
     return id ? { id, ...row } : row;
   });
 
-  const { data, error } = await supabase
+  const { data, error } = await requireSupabase()
     .from('players')
     .upsert(rows, { onConflict: 'id' })
     .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url');

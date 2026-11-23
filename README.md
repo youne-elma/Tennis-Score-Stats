@@ -25,6 +25,25 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+## Run locally and connect Supabase
+
+Run `npm run web` and choose **Continue offline** to track matches with local storage.
+
+To enable accounts and cloud storage, set these values in a `.env.local` file at the project root using your Supabase project URL and publishable key. Reload the app after setting them.
+
+```dotenv
+EXPO_PUBLIC_SUPABASE_URL=
+EXPO_PUBLIC_SUPABASE_KEY=
+```
+
+## Coach Chat
+
+For a new Supabase database, run `schema.sql`, `rls.sql`, `auth-trigger.sql`, `user-roles.sql`, `chat-schema.sql`, and `chat-rls.sql` from `supabase/` in that order.
+
+Open **Coach Chat** with a regular account to start a conversation. Give the coach's Auth user the `coach` role in the `user_roles` table to let them open the inbox and reply.
+
+Open conversations refresh automatically. To enable immediate delivery, add `chat_messages` to the `supabase_realtime` publication in your Supabase project.
+
 ## Get a fresh project
 
 When you're ready, run:
