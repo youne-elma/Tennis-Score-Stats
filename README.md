@@ -36,9 +36,11 @@ EXPO_PUBLIC_SUPABASE_URL=
 EXPO_PUBLIC_SUPABASE_KEY=
 ```
 
+For an existing Supabase database, run [player-archive.sql](supabase/player-archive.sql) to enable player archiving and preserve historical match references.
+
 ## Coach Chat
 
-For a new Supabase database, run `schema.sql`, `rls.sql`, `auth-trigger.sql`, `user-roles.sql`, `chat-schema.sql`, and `chat-rls.sql` from `supabase/` in that order.
+For a new Supabase database, run `schema.sql`, `rls.sql`, `player-archive.sql`, `auth-trigger.sql`, `user-roles.sql`, `chat-schema.sql`, and `chat-rls.sql` from `supabase/` in that order.
 
 Open **Coach Chat** with a regular account to start a conversation. Give the coach's Auth user the `coach` role in the `user_roles` table to let them open the inbox and reply.
 

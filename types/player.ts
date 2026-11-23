@@ -12,6 +12,7 @@ export type Player = {
   strengths?: string;
   weaknesses?: string;
   photoUri?: string;
+  archivedAt?: string;
 };
 
-export type PlayerFormValues = Omit<Player, 'id'>;
+export type PlayerFormValues = Omit<Player, 'id' | 'archivedAt'>;

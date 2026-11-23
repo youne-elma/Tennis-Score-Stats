@@ -4,8 +4,8 @@ import { Alert } from 'react-native';
 import { useAuth } from '@/contexts/auth-context';
 import { Player, PlayerFormValues } from '@/types/player';
 import {
+  archiveSupabasePlayer,
   createSupabasePlayer,
-  deleteSupabasePlayer,
   loadSupabasePlayers,
   syncLocalPlayersToSupabase,
   updateSupabasePlayer,
@@ -14,10 +14,11 @@ import { loadPlayers, savePlayers } from '@/utils/storage';
 
 type PlayersContextValue = {
   players: Player[];
+  activePlayers: Player[];
   isLoadingPlayers: boolean;
   addPlayer: (player: PlayerFormValues) => void;
   updatePlayer: (id: string, player: PlayerFormValues) => void;
-  deletePlayer: (id: string) => void;
+  archivePlayer: (id: string) => Promise<void>;
 };
 
 const PlayersContext = createContext<PlayersContextValue | null>(null);
@@ -26,7 +27,7 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
   const { mode, user } = useAuth();
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoadingPlayers, setIsLoadingPlayers] = useState(true);
-  const [hasLoadedPlayers, setHasLoadedPlayers] = useState(false);
+  const [hasLoadedLocalPlayers, setHasLoadedLocalPlayers] = useState(false);
   const [syncedLocalPlayersUserId, setSyncedLocalPlayersUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
 
     async function loadPlayerSource() {
       setIsLoadingPlayers(true);
-      setHasLoadedPlayers(false);
+      setHasLoadedLocalPlayers(false);
 
       try {
         if (mode === 'loading') {
@@ -62,13 +63,13 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
 
         if (isMounted) {
           setPlayers(storedPlayers);
+          setHasLoadedLocalPlayers(true);
         }
       } catch {
         Alert.alert('Players error', 'Could not load players.');
       } finally {
         if (isMounted && mode !== 'loading') {
           setIsLoadingPlayers(false);
-          setHasLoadedPlayers(true);
         }
       }
     }
@@ -81,18 +82,19 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
   }, [mode, syncedLocalPlayersUserId, user]);
 
   useEffect(() => {
-    if (!hasLoadedPlayers || mode === 'authenticated') {
+    if (!hasLoadedLocalPlayers || mode === 'authenticated') {
       return;
     }
 
     savePlayers(players).catch(() => {
       Alert.alert('Storage error', 'Could not save players.');
     });
-  }, [hasLoadedPlayers, mode, players]);
+  }, [hasLoadedLocalPlayers, mode, players]);
 
   const value = useMemo(
     () => ({
       players,
+      activePlayers: players.filter((player) => !player.archivedAt),
       isLoadingPlayers,
       addPlayer: async (player: PlayerFormValues) => {
         if (mode === 'authenticated' && user) {
@@ -130,23 +132,30 @@ export function PlayersProvider({ children }: { children: ReactNode }) {
 
         setPlayers((currentPlayers) =>
           currentPlayers.map((currentPlayer) =>
-            currentPlayer.id === id ? { id, ...player } : currentPlayer
+            currentPlayer.id === id ? { ...currentPlayer, ...player } : currentPlayer
           )
         );
       },
-      deletePlayer: async (id: string) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            await deleteSupabasePlayer(id, user.id);
-            setPlayers((currentPlayers) => currentPlayers.filter((player) => player.id !== id));
-          } catch {
-            Alert.alert('Players error', 'Could not delete player.');
-          }
-
+      archivePlayer: async (id: string) => {
+        const player = players.find((currentPlayer) => currentPlayer.id === id);
+        if (!player || player.archivedAt) {
           return;
         }
 
-        setPlayers((currentPlayers) => currentPlayers.filter((player) => player.id !== id));
+        const archivedAt = new Date().toISOString();
+        if (mode === 'authenticated' && user) {
+          const archivedPlayer = await archiveSupabasePlayer(id, user.id, archivedAt);
+          setPlayers((currentPlayers) =>
+            currentPlayers.map((currentPlayer) => (currentPlayer.id === id ? archivedPlayer : currentPlayer))
+          );
+          return;
+        }
+
+        const archiveLocalPlayer = (localPlayers: Player[]) => localPlayers.map((currentPlayer) =>
+          currentPlayer.id === id ? { ...currentPlayer, archivedAt: currentPlayer.archivedAt ?? archivedAt } : currentPlayer
+        );
+        await savePlayers(archiveLocalPlayer(players));
+        setPlayers(archiveLocalPlayer);
       },
     }),
     [isLoadingPlayers, mode, players, user]

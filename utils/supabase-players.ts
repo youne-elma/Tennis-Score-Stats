@@ -12,12 +12,15 @@ type SupabasePlayerRow = {
   strengths: string | null;
   weaknesses: string | null;
   photo_url: string | null;
+  archived_at: string | null;
 };
+
+const playerSelect = 'id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url,archived_at';
 
 export async function loadSupabasePlayers(userId: string) {
   const { data, error } = await requireSupabase()
     .from('players')
-    .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url')
+    .select(playerSelect)
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
 
@@ -32,7 +35,7 @@ export async function createSupabasePlayer(userId: string, player: PlayerFormVal
   const { data, error } = await requireSupabase()
     .from('players')
     .insert(toSupabasePlayerInput(userId, player))
-    .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url')
+    .select(playerSelect)
     .single();
 
   if (error) {
@@ -48,7 +51,7 @@ export async function updateSupabasePlayer(id: string, userId: string, player: P
     .update(toSupabasePlayerInput(userId, player))
     .eq('id', id)
     .eq('user_id', userId)
-    .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url')
+    .select(playerSelect)
     .single();
 
   if (error) {
@@ -58,30 +61,40 @@ export async function updateSupabasePlayer(id: string, userId: string, player: P
   return fromSupabasePlayer(data);
 }
 
-export async function deleteSupabasePlayer(id: string, userId: string) {
-  const { error } = await requireSupabase().from('players').delete().eq('id', id).eq('user_id', userId);
+export async function archiveSupabasePlayer(id: string, userId: string, archivedAt: string) {
+  const { data, error } = await requireSupabase()
+    .from('players')
+    .update({ archived_at: archivedAt })
+    .eq('id', id)
+    .eq('user_id', userId)
+    .select(playerSelect)
+    .single();
 
   if (error) {
     throw error;
   }
+
+  return fromSupabasePlayer(data);
 }
 
 export async function syncLocalPlayersToSupabase(userId: string, players: Player[]) {
-  if (players.length === 0) {
+  const rows = players
+    .filter((player) => !player.archivedAt)
+    .map((player) => {
+      const id = normalizeUuid(player.id);
+      const row = toSupabasePlayerInput(userId, player);
+
+      return id ? { id, ...row } : row;
+    });
+
+  if (rows.length === 0) {
     return [];
   }
-
-  const rows = players.map((player) => {
-    const id = normalizeUuid(player.id);
-    const row = toSupabasePlayerInput(userId, player);
-
-    return id ? { id, ...row } : row;
-  });
 
   const { data, error } = await requireSupabase()
     .from('players')
     .upsert(rows, { onConflict: 'id' })
-    .select('id,user_id,first_name,last_name,gender,handedness,birthday_date,strengths,weaknesses,photo_url');
+    .select(playerSelect);
 
   if (error) {
     throw error;
@@ -101,6 +114,7 @@ function fromSupabasePlayer(row: SupabasePlayerRow): Player {
     strengths: row.strengths ?? undefined,
     weaknesses: row.weaknesses ?? undefined,
     photoUri: row.photo_url ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 }
 

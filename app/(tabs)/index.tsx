@@ -29,6 +29,8 @@ import { useCoachNotifications } from "@/contexts/coach-notifications-context";
 import { usePlayers } from "@/contexts/players-context";
 import { Gender, Handedness, Player, PlayerFormValues } from "@/types/player";
 
+type ArchiveStatus = "idle" | "confirming" | "archiving" | "failed";
+
 const emptyForm: PlayerFormValues = {
   firstName: "",
   lastName: "",
@@ -45,12 +47,14 @@ export default function PlayersScreen() {
   const { mode } = useAuth();
   const { unreadReplies } = useCoachNotifications();
   const hasUnreadReply = unreadReplies.length > 0;
-  const { players, isLoadingPlayers, addPlayer, updatePlayer, deletePlayer } =
+  const { activePlayers, isLoadingPlayers, addPlayer, updatePlayer, archivePlayer } =
     usePlayers();
   const [formVisible, setFormVisible] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [form, setForm] = useState<PlayerFormValues>(emptyForm);
   const [birthdayPickerVisible, setBirthdayPickerVisible] = useState(false);
+  const [archiveStatus, setArchiveStatus] = useState<ArchiveStatus>("idle");
+  const isConfirmingArchive = archiveStatus !== "idle" && editingPlayer !== null;
 
   const openCreateForm = () => {
     setEditingPlayer(null);
@@ -78,6 +82,7 @@ export default function PlayersScreen() {
     setEditingPlayer(null);
     setForm(emptyForm);
     setBirthdayPickerVisible(false);
+    setArchiveStatus("idle");
   };
 
   const savePlayer = () => {
@@ -128,22 +133,18 @@ export default function PlayersScreen() {
     closeForm();
   };
 
-  const confirmDeletePlayer = (player: Player) => {
-    Alert.alert(
-      "Delete player",
-      `Delete ${player.firstName} ${player.lastName}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            deletePlayer(player.id);
-            closeForm();
-          },
-        },
-      ],
-    );
+  const confirmArchivePlayer = async () => {
+    if (!editingPlayer || archiveStatus === "archiving") {
+      return;
+    }
+
+    setArchiveStatus("archiving");
+    try {
+      await archivePlayer(editingPlayer.id);
+      closeForm();
+    } catch {
+      setArchiveStatus("failed");
+    }
   };
 
   const openCoachChat = () => {
@@ -197,22 +198,22 @@ export default function PlayersScreen() {
         ]}
       >
         <AppCard
-          tone={players.length >= 2 ? "default" : "gold"}
+          tone={activePlayers.length >= 2 ? "default" : "gold"}
           style={styles.notice}
         >
           <MaterialIcons
-            name={players.length >= 2 ? "check-circle" : "info-outline"}
+            name={activePlayers.length >= 2 ? "check-circle" : "info-outline"}
             size={20}
             color={
-              players.length >= 2
+              activePlayers.length >= 2
                 ? AppTheme.colors.success
                 : AppTheme.colors.primary
             }
           />
           <Text style={styles.noticeText}>
-            {players.length >= 2
+            {activePlayers.length >= 2
               ? "You have enough players to create a match."
-              : `Create ${2 - players.length} more player${players.length === 1 ? "" : "s"} before starting a match.`}
+              : `Create ${2 - activePlayers.length} more player${activePlayers.length === 1 ? "" : "s"} before starting a match.`}
           </Text>
         </AppCard>
 
@@ -228,12 +229,12 @@ export default function PlayersScreen() {
               Your local player profiles are being restored.
             </Text>
           </AppCard>
-        ) : players.length === 0 ? (
+        ) : activePlayers.length === 0 ? (
           <AppCard style={styles.emptyState}>
             <PlayerAvatar size={58} />
-            <Text style={styles.emptyTitle}>No players yet</Text>
+            <Text style={styles.emptyTitle}>No active players</Text>
             <Text style={styles.emptyText}>
-              Create your first players to prepare the match setup.
+              Create players to set up your next match.
             </Text>
             <AppButton
               title="Create player"
@@ -242,7 +243,7 @@ export default function PlayersScreen() {
             />
           </AppCard>
         ) : (
-          players.map((player) => (
+          activePlayers.map((player) => (
             <Pressable key={player.id} onPress={() => openEditForm(player)}>
               <AppCard style={styles.playerCard}>
                 <PlayerAvatar photoUri={player.photoUri} />
@@ -280,11 +281,16 @@ export default function PlayersScreen() {
       </Pressable>
 
       <AppModal
-        title={editingPlayer ? "Edit player" : "New player"}
+        title={isConfirmingArchive ? "Archive player" : editingPlayer ? "Edit player" : "New player"}
         visible={formVisible}
-        onClose={closeForm}
+        onClose={() => {
+          if (archiveStatus !== "archiving") {
+            closeForm();
+          }
+        }}
       >
         <ScrollView
+          style={isConfirmingArchive && styles.hiddenForm}
           contentContainerStyle={styles.formContent}
           keyboardShouldPersistTaps="handled"
         >
@@ -455,10 +461,10 @@ export default function PlayersScreen() {
           <View style={styles.formActions}>
             {editingPlayer ? (
               <AppButton
-                title="Delete"
-                icon="delete"
-                variant="danger"
-                onPress={() => confirmDeletePlayer(editingPlayer)}
+                title="Archive"
+                icon="archive"
+                variant="secondary"
+                onPress={() => setArchiveStatus("confirming")}
               />
             ) : null}
             <AppButton
@@ -468,6 +474,28 @@ export default function PlayersScreen() {
             />
           </View>
         </ScrollView>
+        {isConfirmingArchive && editingPlayer ? (
+          <View style={styles.formActions}>
+            <Text style={styles.emptyText}>
+              Archive {editingPlayer.firstName} {editingPlayer.lastName}? Their past matches and stats will stay available.
+            </Text>
+            {archiveStatus === "failed" ? (
+              <Text accessibilityRole="alert" style={styles.archiveError}>Could not archive this player.</Text>
+            ) : null}
+            <AppButton
+              title={archiveStatus === "archiving" ? "Archiving…" : "Archive player"}
+              icon="archive"
+              disabled={archiveStatus === "archiving"}
+              onPress={confirmArchivePlayer}
+            />
+            <AppButton
+              title="Cancel"
+              variant="secondary"
+              disabled={archiveStatus === "archiving"}
+              onPress={() => setArchiveStatus("idle")}
+            />
+          </View>
+        ) : null}
       </AppModal>
     </SafeAreaView>
   );
@@ -700,5 +728,12 @@ const styles = StyleSheet.create({
   },
   formActions: {
     gap: 10,
+  },
+  hiddenForm: {
+    display: "none",
+  },
+  archiveError: {
+    color: AppTheme.colors.danger,
+    textAlign: "center",
   },
 });

@@ -48,12 +48,14 @@ const defaultForm: MatchFormValues = {
 
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
-  const { players } = usePlayers();
+  const { players, activePlayers } = usePlayers();
   const { matches, isLoadingMatches, matchesLoadFailed, retryLoadMatches, addMatch } = useMatches();
   const [formVisible, setFormVisible] = useState(false);
   const [form, setForm] = useState<MatchFormValues>(defaultForm);
 
-  const canCreateMatch = players.length >= 2;
+  const canCreateMatch = activePlayers.length >= 2;
+  const selectedPlayersAreActive = activePlayers.some((player) => player.id === form.player1Id)
+    && activePlayers.some((player) => player.id === form.player2Id);
   const isHistoryReady = !isLoadingMatches && !matchesLoadFailed;
   const playerById = useMemo(
     () => new Map(players.map((player) => [player.id, player])),
@@ -64,23 +66,23 @@ export default function MatchesScreen() {
     if (!canCreateMatch) {
       Alert.alert(
         "Need more players",
-        `Create ${2 - players.length} more player${players.length === 1 ? "" : "s"} before creating a match.`,
+        `Create ${2 - activePlayers.length} more player${activePlayers.length === 1 ? "" : "s"} before creating a match.`,
       );
       return;
     }
 
     setForm({
       ...defaultForm,
-      player1Id: players[0].id,
-      player2Id: players[1].id,
-      initialServerId: players[0].id,
+      player1Id: activePlayers[0].id,
+      player2Id: activePlayers[1].id,
+      initialServerId: activePlayers[0].id,
     });
     setFormVisible(true);
   };
 
   const saveMatch = () => {
-    if (!form.player1Id || !form.player2Id) {
-      Alert.alert("Missing players", "Select Player 1 and Player 2.");
+    if (!selectedPlayersAreActive) {
+      Alert.alert("Missing players", "Select two active players.");
       return;
     }
 
@@ -142,7 +144,7 @@ export default function MatchesScreen() {
         >
           <View style={styles.requirementHeader}>
             <Text style={styles.sectionTitle}>Match requirement</Text>
-            <Text style={styles.badge}>{players.length}/2 players</Text>
+            <Text style={styles.badge}>{activePlayers.length}/2 players</Text>
           </View>
           <Text style={styles.bodyText}>
             {canCreateMatch
@@ -212,6 +214,8 @@ export default function MatchesScreen() {
       </ScrollView>
 
       <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Create match"
         style={[
           styles.fab,
           { bottom: 40 + Math.max(insets.bottom) },
@@ -238,7 +242,7 @@ export default function MatchesScreen() {
         >
           <PlayerPicker
             label="Player 1"
-            players={players}
+            players={activePlayers}
             selectedPlayerId={form.player1Id}
             disabledPlayerId={form.player2Id}
             onSelect={(player1Id) =>
@@ -256,7 +260,7 @@ export default function MatchesScreen() {
 
           <PlayerPicker
             label="Player 2"
-            players={players}
+            players={activePlayers}
             selectedPlayerId={form.player2Id}
             disabledPlayerId={form.player1Id}
             onSelect={(player2Id) =>
@@ -274,7 +278,7 @@ export default function MatchesScreen() {
 
           <PlayerPicker
             label="First server"
-            players={players.filter(
+            players={activePlayers.filter(
               (player) =>
                 player.id === form.player1Id || player.id === form.player2Id,
             )}
@@ -364,7 +368,12 @@ export default function MatchesScreen() {
             player2={playerById.get(form.player2Id)}
           />
 
-          <AppButton title="Create match" icon="check" disabled={!isHistoryReady} onPress={saveMatch} />
+          <AppButton
+            title="Create match"
+            icon="check"
+            disabled={!isHistoryReady || !selectedPlayersAreActive}
+            onPress={saveMatch}
+          />
         </ScrollView>
       </AppModal>
     </SafeAreaView>
