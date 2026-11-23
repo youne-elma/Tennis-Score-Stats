@@ -49,11 +49,12 @@ const defaultForm: MatchFormValues = {
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
   const { players } = usePlayers();
-  const { matches, isLoadingMatches, addMatch } = useMatches();
+  const { matches, isLoadingMatches, matchesLoadFailed, retryLoadMatches, addMatch } = useMatches();
   const [formVisible, setFormVisible] = useState(false);
   const [form, setForm] = useState<MatchFormValues>(defaultForm);
 
   const canCreateMatch = players.length >= 2;
+  const isHistoryReady = !isLoadingMatches && !matchesLoadFailed;
   const playerById = useMemo(
     () => new Map(players.map((player) => [player.id, player])),
     [players],
@@ -162,6 +163,11 @@ export default function MatchesScreen() {
               Your match history and service events are being restored.
             </Text>
           </AppCard>
+        ) : matchesLoadFailed ? (
+          <AppCard style={styles.heroPanel}>
+            <Text accessibilityRole="alert" style={styles.heroTitle}>Could not load match history.</Text>
+            <AppButton title="Try again" icon="refresh" onPress={retryLoadMatches} />
+          </AppCard>
         ) : matches.length === 0 ? (
           <AppCard style={styles.heroPanel}>
             <MaterialIcons
@@ -209,8 +215,9 @@ export default function MatchesScreen() {
         style={[
           styles.fab,
           { bottom: 40 + Math.max(insets.bottom) },
-          !canCreateMatch && styles.fabDisabled,
+          (!canCreateMatch || !isHistoryReady) && styles.fabDisabled,
         ]}
+        disabled={!isHistoryReady}
         onPress={openCreateMatch}
       >
         <MaterialIcons
@@ -357,7 +364,7 @@ export default function MatchesScreen() {
             player2={playerById.get(form.player2Id)}
           />
 
-          <AppButton title="Create match" icon="check" onPress={saveMatch} />
+          <AppButton title="Create match" icon="check" disabled={!isHistoryReady} onPress={saveMatch} />
         </ScrollView>
       </AppModal>
     </SafeAreaView>

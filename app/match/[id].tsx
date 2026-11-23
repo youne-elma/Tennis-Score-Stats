@@ -59,6 +59,9 @@ export default function MatchScoringScreen() {
   const { mode, user } = useAuth();
   const {
     matches,
+    isLoadingMatches,
+    matchesLoadFailed,
+    retryLoadMatches,
     pauseMatch,
     recordServiceEvent,
     undoLastServiceEvent,
@@ -66,7 +69,7 @@ export default function MatchScoringScreen() {
     updateMatchStatus,
     updateServiceEvent,
   } = useMatches();
-  const { players } = usePlayers();
+  const { players, isLoadingPlayers } = usePlayers();
   const [recentAction, setRecentAction] = useState('No service action recorded yet.');
   const [pendingService, setPendingService] = useState<PendingService | null>(null);
   const [serviceDetail, setServiceDetail] = useState<ServiceDetailForm>(defaultServiceDetail);
@@ -113,12 +116,20 @@ export default function MatchScoringScreen() {
   }, [match, playerById, score?.matchWinnerId, updateMatchStatus]);
 
   if (!match || !player1 || !player2) {
+    const isLoadingMatch = isLoadingMatches || isLoadingPlayers;
+    const title = matchesLoadFailed
+      ? 'Could not load match history.'
+      : isLoadingMatch ? 'Loading match history…' : 'Match unavailable';
+
     return (
       <SafeAreaView style={styles.screen}>
         <View style={styles.missingState}>
-          <MaterialIcons name="warning" size={34} color={AppTheme.colors.primary} />
-          <Text style={styles.missingTitle}>Match unavailable</Text>
-          <Text style={styles.missingText}>Go back to Matches and choose an existing match.</Text>
+          <MaterialIcons name={isLoadingMatch && !matchesLoadFailed ? 'storage' : 'warning'} size={34} color={AppTheme.colors.primary} />
+          <Text accessibilityRole={matchesLoadFailed ? 'alert' : undefined} style={styles.missingTitle}>{title}</Text>
+          {matchesLoadFailed ? <AppButton title="Try again" icon="refresh" onPress={retryLoadMatches} /> : null}
+          {!isLoadingMatch && !matchesLoadFailed ? (
+            <Text style={styles.missingText}>Go back to Matches and choose an existing match.</Text>
+          ) : null}
           <AppButton title="Back to matches" icon="arrow-back" onPress={() => router.replace('/(tabs)/matches')} />
         </View>
       </SafeAreaView>

@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { useAuth } from '@/contexts/auth-context';
@@ -16,6 +16,8 @@ import { loadMatches, saveMatches } from '@/utils/storage';
 type MatchesContextValue = {
   matches: TennisMatch[];
   isLoadingMatches: boolean;
+  matchesLoadFailed: boolean;
+  retryLoadMatches: () => void;
   addMatch: (match: MatchFormValues) => void;
   updateMatchStatus: (id: string, status: TennisMatch['status']) => void;
   pauseMatch: (id: string, pauseReason: string) => void;
@@ -26,61 +28,62 @@ type MatchesContextValue = {
 };
 
 const MatchesContext = createContext<MatchesContextValue | null>(null);
+const emptyMatches: TennisMatch[] = [];
 
 export function MatchesProvider({ children }: { children: ReactNode }) {
   const { mode, user } = useAuth();
   const [matches, setMatches] = useState<TennisMatch[]>([]);
-  const [isLoadingMatches, setIsLoadingMatches] = useState(true);
-  const [hasLoadedMatches, setHasLoadedMatches] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadResult, setLoadResult] = useState<{ userId: string | null; attempt: number; failed: boolean }>();
+  const sourceUserId = mode === 'loading' ? undefined : mode === 'authenticated' ? user?.id : null;
+  const currentLoad = loadResult?.userId === sourceUserId && loadResult?.attempt === loadAttempt ? loadResult : undefined;
+  const isLoadingMatches = !currentLoad;
+  const matchesLoadFailed = currentLoad?.failed === true;
+  const retryLoadMatches = useCallback(() => setLoadAttempt((attempt) => attempt + 1), []);
 
   useEffect(() => {
-    let isMounted = true;
+    if (sourceUserId === undefined) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const userId = sourceUserId;
 
     async function loadMatchSource() {
-      setIsLoadingMatches(true);
-      setHasLoadedMatches(false);
-
       try {
-        if (mode === 'loading') {
-          return;
-        }
+        const nextMatches = userId === null ? await loadMatches() : await loadSupabaseMatches(userId, controller.signal);
 
-        const nextMatches = mode === 'authenticated' && user ? await loadSupabaseMatches(user.id) : await loadMatches();
-
-        if (isMounted) {
+        if (!controller.signal.aborted) {
           setMatches(nextMatches);
+          setLoadResult({ userId, attempt: loadAttempt, failed: false });
         }
       } catch {
-        Alert.alert('Matches error', 'Could not load matches.');
-      } finally {
-        if (isMounted && mode !== 'loading') {
-          setIsLoadingMatches(false);
-          setHasLoadedMatches(true);
+        if (!controller.signal.aborted) {
+          setLoadResult({ userId, attempt: loadAttempt, failed: true });
         }
       }
     }
 
-    loadMatchSource();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [mode, user]);
+    void loadMatchSource();
+    return () => controller.abort();
+  }, [loadAttempt, sourceUserId]);
 
   useEffect(() => {
-    if (!hasLoadedMatches || mode === 'authenticated') {
+    if (sourceUserId !== null || isLoadingMatches || matchesLoadFailed) {
       return;
     }
 
     saveMatches(matches).catch(() => {
       Alert.alert('Storage error', 'Could not save matches.');
     });
-  }, [hasLoadedMatches, matches, mode]);
+  }, [isLoadingMatches, matches, matchesLoadFailed, sourceUserId]);
 
   const value = useMemo(
     () => ({
-      matches,
+      matches: isLoadingMatches || matchesLoadFailed ? emptyMatches : matches,
       isLoadingMatches,
+      matchesLoadFailed,
+      retryLoadMatches,
       addMatch: async (match: MatchFormValues) => {
         if (mode === 'authenticated' && user) {
           try {
@@ -300,7 +303,7 @@ export function MatchesProvider({ children }: { children: ReactNode }) {
         );
       },
     }),
-    [isLoadingMatches, matches, mode, user]
+    [isLoadingMatches, matches, matchesLoadFailed, mode, retryLoadMatches, user]
   );
 
   return <MatchesContext.Provider value={value}>{children}</MatchesContext.Provider>;

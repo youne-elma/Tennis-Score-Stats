@@ -48,47 +48,34 @@ const matchSelect =
 const serviceEventSelect =
   'id,user_id,match_id,server_id,phase,action,serve_type,zone,fault_type,point_winner_id,created_at';
 
-export async function loadSupabaseMatches(userId: string) {
-  const supabase = requireSupabase();
-  const { data: matchRows, error: matchesError } = await supabase
-    .from('matches')
-    .select(matchSelect)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+type MatchHistoryRows = {
+  matches: SupabaseMatchRow;
+  service_events: SupabaseServiceEventRow;
+};
 
-  if (matchesError) {
-    throw matchesError;
+const matchHistorySelect = {
+  matches: matchSelect,
+  service_events: serviceEventSelect,
+};
+
+const matchHistoryPageSize = 500;
+
+export async function loadSupabaseMatches(userId: string, signal?: AbortSignal) {
+  const matchRows = await loadMatchHistoryRows('matches', userId, signal);
+  if (matchRows.length === 0) {
+    return [];
   }
 
-  const matches = (matchRows ?? []).map((row) => fromSupabaseMatch(row, []));
-  const matchIds = matches.map((match) => match.id);
-
-  if (matchIds.length === 0) {
-    return matches;
-  }
-
-  const { data: eventRows, error: eventsError } = await supabase
-    .from('service_events')
-    .select(serviceEventSelect)
-    .in('match_id', matchIds)
-    .order('created_at', { ascending: true });
-
-  if (eventsError) {
-    throw eventsError;
-  }
-
+  const eventRows = await loadMatchHistoryRows('service_events', userId, signal);
   const eventsByMatchId = new Map<string, ServiceEvent[]>();
 
-  for (const row of eventRows ?? []) {
+  for (const row of eventRows) {
     const events = eventsByMatchId.get(row.match_id) ?? [];
     events.push(fromSupabaseServiceEvent(row));
     eventsByMatchId.set(row.match_id, events);
   }
 
-  return matches.map((match) => ({
-    ...match,
-    serviceEvents: eventsByMatchId.get(match.id) ?? [],
-  }));
+  return matchRows.reverse().map((row) => fromSupabaseMatch(row, eventsByMatchId.get(row.id) ?? []));
 }
 
 export async function createSupabaseMatch(userId: string, match: MatchFormValues) {
@@ -167,6 +154,46 @@ export async function deleteSupabaseServiceEvent(matchId: string, eventId: strin
 
   if (error) {
     throw error;
+  }
+}
+
+async function loadMatchHistoryRows<Table extends keyof MatchHistoryRows>(
+  table: Table,
+  userId: string,
+  signal?: AbortSignal,
+) {
+  const supabase = requireSupabase();
+  const rows: MatchHistoryRows[Table][] = [];
+  let cursor: Pick<SupabaseMatchRow, 'created_at' | 'id'> | undefined;
+
+  while (true) {
+    const query = supabase
+      .from(table)
+      .select(matchHistorySelect[table])
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(matchHistoryPageSize);
+
+    if (cursor) {
+      const timestamp = `"${cursor.created_at}"`;
+      query.or(`created_at.gt.${timestamp},and(created_at.eq.${timestamp},id.gt.${cursor.id})`);
+    }
+    if (signal) {
+      query.abortSignal(signal);
+    }
+
+    const { data, error } = await query.overrideTypes<MatchHistoryRows[Table][], { merge: false }>();
+    if (error) {
+      throw error;
+    }
+    // A project's API limit can be lower than the requested page size.
+    if (!data?.length) {
+      return rows;
+    }
+
+    rows.push(...data);
+    cursor = data.at(-1);
   }
 }
 
