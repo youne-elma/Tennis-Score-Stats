@@ -1,8 +1,9 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { router } from "expo-router";
-import { useMemo, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import { MatchHistoryFilterModal } from "@/components/match-history-filter-modal";
 import { MatchSyncNotice } from "@/components/match-sync-notice";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
@@ -22,6 +24,7 @@ import { AppToggle } from "@/components/ui/app-toggle";
 import { PlayerAvatar } from "@/components/ui/player-avatar";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { AppTheme } from "@/constants/theme";
+import { useAuth } from "@/contexts/auth-context";
 import { useMatches } from "@/contexts/matches-context";
 import { usePlayers } from "@/contexts/players-context";
 import {
@@ -34,6 +37,7 @@ import {
   TiebreakType,
 } from "@/types/match";
 import { Player } from "@/types/player";
+import { defaultMatchHistoryFilters, filterMatchHistory, type MatchHistoryFilters } from "@/utils/match-history-filters";
 
 const defaultForm: MatchFormValues = {
   player1Id: "",
@@ -49,6 +53,7 @@ const defaultForm: MatchFormValues = {
 
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
+  const { accountId } = useAuth();
   const { players, activePlayers, canEditPlayers } = usePlayers();
   const { matches, isLoadingMatches, matchesLoadFailed, cloudHistoryFailed, writeError, retryLoadMatches, addMatch } = useMatches();
   const [formVisible, setFormVisible] = useState(false);
@@ -215,14 +220,7 @@ export default function MatchesScreen() {
             ) : null}
           </AppCard>
         ) : (
-          matches.map((match) => (
-            <MatchCard
-              key={match.id}
-              match={match}
-              player1={playerById.get(match.player1Id)}
-              player2={playerById.get(match.player2Id)}
-            />
-          ))
+          <MatchHistory key={accountId ?? "guest"} matches={matches} playerById={playerById} />
         )}
 
         <AppCard tone="gold" style={styles.previewCard}>
@@ -399,6 +397,83 @@ export default function MatchesScreen() {
         </ScrollView>
       </AppModal>
     </SafeAreaView>
+  );
+}
+
+function MatchHistory({
+  matches,
+  playerById,
+}: {
+  matches: TennisMatch[];
+  playerById: ReadonlyMap<string, Player>;
+}) {
+  const [filters, setFilters] = useState(defaultMatchHistoryFilters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [today, setToday] = useState(() => new Date());
+
+  useFocusEffect(useCallback(() => {
+    setToday(new Date());
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") setToday(new Date());
+    });
+    return () => subscription.remove();
+  }, []));
+
+  const playerOptions = useMemo(() => {
+    const participants = new Set(matches.flatMap((match) => [match.player1Id, match.player2Id]));
+    return Array.from(playerById.values())
+      .filter((player) => participants.has(player.id))
+      .map((player) => ({ label: formatPlayerName(player), value: player.id }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [matches, playerById]);
+
+  const filteredMatches = useMemo(() => filterMatchHistory(matches, filters, today), [filters, matches, today]);
+  const activeFilters = [Boolean(filters.playerId), filters.period !== "all", filters.status !== "all"]
+    .filter(Boolean).length;
+  const totalLabel = `${matches.length} ${matches.length === 1 ? "match" : "matches"}`;
+  const resultLabel = activeFilters ? `${filteredMatches.length} of ${totalLabel}` : totalLabel;
+
+  function applyFilters(next: MatchHistoryFilters) {
+    setFilters(next);
+    setToday(new Date());
+    setFiltersOpen(false);
+  }
+
+  return (
+    <>
+      <View style={styles.historyToolbar}>
+        <Text accessibilityLiveRegion="polite" style={styles.matchMeta}>{resultLabel}</Text>
+        <AppButton
+          title={activeFilters ? `Filters (${activeFilters})` : "Filters"}
+          icon="filter-list"
+          variant="secondary"
+          onPress={() => setFiltersOpen(true)}
+        />
+      </View>
+
+      {filteredMatches.length ? filteredMatches.map((match) => (
+        <MatchCard
+          key={match.id}
+          match={match}
+          player1={playerById.get(match.player1Id)}
+          player2={playerById.get(match.player2Id)}
+        />
+      )) : (
+        <AppCard style={styles.heroPanel}>
+          <Text style={styles.heroTitle}>No matches found</Text>
+          <AppButton title="Reset filters" variant="secondary" onPress={() => applyFilters(defaultMatchHistoryFilters)} />
+        </AppCard>
+      )}
+
+      {filtersOpen ? (
+        <MatchHistoryFilterModal
+          filters={filters}
+          players={playerOptions}
+          onApply={applyFilters}
+          onClose={() => setFiltersOpen(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -681,6 +756,12 @@ const styles = StyleSheet.create({
   content: {
     gap: 14,
     paddingHorizontal: 20,
+  },
+  historyToolbar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
   },
   requirementCard: {
     gap: 8,

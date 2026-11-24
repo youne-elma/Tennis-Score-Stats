@@ -12,6 +12,7 @@ type SegmentedControlProps<T extends string> = {
   options: Option<T>[];
   value: T;
   onChange: (value: T) => void;
+  wrap?: boolean;
 };
 
 export function SegmentedControl<T extends string>({
@@ -19,11 +20,12 @@ export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
+  wrap = false,
 }: SegmentedControlProps<T>) {
   return (
     <View style={styles.group}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
-      <View role="radiogroup" aria-label={label} style={styles.control}>
+      <View role="radiogroup" aria-label={label} style={[styles.control, wrap && styles.wrappedControl]}>
         {options.map((option) => {
           const selected = option.value === value;
 
@@ -32,7 +34,7 @@ export function SegmentedControl<T extends string>({
               key={option.value}
               role="radio"
               aria-checked={selected}
-              style={[styles.option, selected && styles.optionSelected]}
+              style={[styles.option, wrap ? styles.wrappedOption : styles.segment, selected && styles.optionSelected]}
               onPress={() => onChange(option.value)}>
               <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
                 {option.label}
@@ -62,13 +64,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 4,
   },
+  wrappedControl: {
+    flexWrap: 'wrap',
+    gap: 4,
+  },
   option: {
     alignItems: 'center',
     borderRadius: 6,
-    flex: 1,
     justifyContent: 'center',
     minHeight: 40,
     paddingHorizontal: 8,
+  },
+  segment: {
+    flex: 1,
+  },
+  wrappedOption: {
+    flexShrink: 1,
+    maxWidth: '100%',
   },
   optionSelected: {
     backgroundColor: AppTheme.colors.primary,
