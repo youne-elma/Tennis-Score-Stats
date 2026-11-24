@@ -1,10 +1,11 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useIsFocused } from "@react-navigation/native";
 import { Href, router } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { useReducedMotion } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ResumeMatchCard } from "@/components/resume-match-card";
 import { AppButton } from "@/components/ui/app-button";
 import { AppTheme, Fonts } from "@/constants/theme";
 import { useAuth } from "@/contexts/auth-context";
@@ -49,7 +50,7 @@ export default function AuthGatewayScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <TennisBackground />
-      <View style={styles.centerContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.brandBlock}>
           <View style={styles.logoMark}>
             <MaterialIcons
@@ -63,6 +64,7 @@ export default function AuthGatewayScreen() {
         </View>
 
         <View style={styles.actions}>
+          <ResumeMatchCard />
           {accountId ? (
             <AppButton
               title="Continue with your account"
@@ -93,7 +95,7 @@ export default function AuthGatewayScreen() {
         <Text style={styles.offlineHint}>
           No account needed. Your data stays on this device in offline mode.
         </Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -136,9 +138,16 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: AppTheme.colors.background,
+  },
+  scrollContent: {
+    alignSelf: "center",
+    flexGrow: 1,
+    gap: 28,
     justifyContent: "center",
+    maxWidth: 488,
     paddingHorizontal: 24,
     paddingVertical: 34,
+    width: "100%",
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -164,12 +173,6 @@ const styles = StyleSheet.create({
     fontSize: 7,
     lineHeight: 8,
     opacity: 0.18,
-  },
-  centerContent: {
-    alignSelf: "center",
-    gap: 28,
-    maxWidth: 440,
-    width: "100%",
   },
   brandBlock: {
     alignItems: "center",

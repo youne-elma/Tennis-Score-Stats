@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -27,7 +27,9 @@ import {
   TiebreakType,
 } from '@/types/match';
 import { Player } from '@/types/player';
+import { isResumableStatus } from '@/utils/resume-match';
 import { formatSharedMatchScore, type SharedMatchStats } from '@/utils/shared-match-stats';
+import { rememberOpenedMatch } from '@/utils/storage';
 import { getOrCreateUserCoachThread, sendChatMessage } from '@/utils/supabase-chat';
 import { calculateTennisScore } from '@/utils/tennis-score';
 import { calculateMatchStats, getMatchStatsSummary, PlayerMatchStats } from '@/utils/tennis-stats';
@@ -57,7 +59,7 @@ export default function MatchScoringScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
-  const { mode, user, isOnline } = useAuth();
+  const { accountId, mode, user, isOnline } = useAuth();
   const {
     matches,
     isLoadingMatches,
@@ -100,6 +102,14 @@ export default function MatchScoringScreen() {
   const activeServePhase: ServePhase =
     lastEvent?.phase === 'First Serve' && lastEvent.action === 'Fault' ? 'Second Serve' : 'First Serve';
   const bottomInset = Math.max(insets.bottom, 10);
+  const openedMatchId = match && player1 && player2 && !isMatchEnded && isResumableStatus(match.status)
+    ? match.id : undefined;
+
+  useFocusEffect(useCallback(() => {
+    if (openedMatchId) {
+      void rememberOpenedMatch(accountId, openedMatchId).catch(() => undefined);
+    }
+  }, [accountId, openedMatchId]));
 
   useEffect(() => {
     if (!match) return;
