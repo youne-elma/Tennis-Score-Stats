@@ -91,7 +91,7 @@ function CoachInbox({
   onFilterChange: (filter: InboxFilter) => void;
   onOpen: (threadId: string) => void;
 }) {
-  const { unreadReplies } = useCoachNotifications();
+  const { unreadReplies, pushSettings } = useCoachNotifications();
   const loadInbox = useCallback(async () => {
     const [role, threads] = await Promise.all([loadUserRole(userId), loadChatThreads()]);
     return { role, threads: role === 'user' ? threads.filter((thread) => thread.createdBy === userId) : threads };
@@ -129,6 +129,22 @@ function CoachInbox({
   return (
     <ScrollView contentContainerStyle={styles.inbox}>
       <Text accessibilityRole="header" style={styles.heading}>Conversations</Text>
+      {pushSettings && (inbox?.role === 'user' || pushSettings.enabled) ? (
+        <AppCard tone="muted" style={styles.feedbackCard}>
+          <AppButton
+            title={pushSettings.isChanging
+              ? 'Updating notifications…'
+              : pushSettings.enabled ? 'Turn off coach notifications' : 'Enable coach notifications'}
+            icon={pushSettings.enabled ? 'notifications-off' : 'notifications'}
+            variant="secondary"
+            disabled={pushSettings.isChanging}
+            onPress={() => pushSettings.setEnabled(!pushSettings.enabled)}
+          />
+          {pushSettings.error ? (
+            <Text accessibilityRole="alert" style={styles.error}>{pushSettings.error}</Text>
+          ) : null}
+        </AppCard>
+      ) : null}
       {canManageInbox ? (
         <SegmentedControl<InboxFilter>
           options={[

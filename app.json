@@ -28,6 +28,7 @@
     },
     "plugins": [
       "expo-router",
+      ["expo-notifications", { "defaultChannel": "coach-replies" }],
       [
         "expo-splash-screen",
         {

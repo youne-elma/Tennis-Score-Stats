@@ -23,6 +23,8 @@ In the output, you'll find options to open the app in a
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
 
+To launch in Expo Go, use `npx expo start --go`.
+
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
 ## Run locally and connect Supabase
@@ -53,6 +55,15 @@ Open **Coach Chat** with a regular account to start a conversation. Give the coa
 From **Match stats**, choose **Share with coach** to post a copy of the score and service statistics in Coach Chat.
 
 Open conversations refresh automatically. To enable immediate delivery, add `chat_messages` to the `supabase_realtime` publication in your Supabase project.
+
+### Mobile notifications for coach replies
+
+1. Apply [coach-push.sql](supabase/coach-push.sql) after the Coach Chat schema and policies.
+2. Set a random `COACH_PUSH_WORKER_SECRET` in the Supabase Edge Function secrets. In Supabase Vault, save the same value as `coach_push_worker_secret` and the project's HTTPS API URL as `coach_push_project_url`. If Expo push security is enabled, set `EXPO_ACCESS_TOKEN` in the Edge Function secrets too.
+3. Deploy the worker with `supabase functions deploy coach-push --project-ref YOUR_PROJECT_REF --no-verify-jwt`. The worker authenticates requests with `COACH_PUSH_WORKER_SECRET`.
+4. Apply [coach-push-schedule.sql](supabase/coach-push-schedule.sql). A database trigger wakes the worker when a reply is queued. Supabase Cron runs it again for retries and push receipts.
+5. For Android, configure [FCM v1 credentials in EAS](https://docs.expo.dev/push-notifications/fcm-credentials/). Use a Firebase `google-services.json` for the Android package in `app.json` and provide it as an EAS file environment variable named `GOOGLE_SERVICES_JSON`. For a local build, set the same variable to the file path. For iOS, configure APNs credentials for the app's bundle identifier in EAS.
+6. Build Android with `eas build --profile development --platform android` and run Metro with `npx expo start --dev-client`. Open Coach Chat on a physical phone, choose **Enable coach notifications**, close the app and reply from a coach account. Tapping the alert opens that conversation.
 
 ## Get a fresh project
 

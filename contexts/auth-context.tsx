@@ -2,6 +2,7 @@ import { Session, User } from '@supabase/supabase-js';
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
 import { requireSupabase, supabase } from '@/lib/supabase';
+import { disableCoachPushDevice } from '@/utils/coach-push-device';
 
 type AuthMode = 'loading' | 'offline' | 'authenticated' | 'guest';
 
@@ -99,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { needsEmailConfirmation: !data.session };
       },
       signOut: async () => {
+        if (session) {
+          await disableCoachPushDevice(session.user.id).catch(() => undefined);
+        }
         await supabase?.auth.signOut();
         setMode('guest');
       },

@@ -2,12 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 
 import { useAuth } from '@/contexts/auth-context';
+import { useCoachPush } from '@/hooks/use-coach-push';
 import type { UnreadCoachReply } from '@/types/chat';
+import type { CoachPushSettings } from '@/types/coach-push';
 import { loadUnreadCoachReplies, markChatThreadRead } from '@/utils/supabase-chat';
 
 type CoachNotifications = {
   unreadReplies: UnreadCoachReply[];
   isAppActive: boolean;
+  pushSettings?: CoachPushSettings;
   markReplyRead: (threadId: string, readThrough: string) => Promise<void>;
 };
 
@@ -16,11 +19,13 @@ const emptyReplies: UnreadCoachReply[] = [];
 const replyCheckInterval = 8_000;
 
 export function CoachNotificationsProvider({ children }: { children: ReactNode }) {
-  const { mode, user } = useAuth();
+  const { mode, user, isLoading } = useAuth();
   const userId = mode === 'authenticated' ? user?.id : undefined;
   const [isAppActive, setAppActive] = useState(() => !AppState.currentState || AppState.currentState === 'active');
   const [snapshot, setSnapshot] = useState<{ userId: string; replies: UnreadCoachReply[] }>();
   const refreshCurrent = useRef<(() => void) | null>(null);
+  const refreshReplies = useCallback(() => refreshCurrent.current?.(), []);
+  const pushSettings = useCoachPush({ userId, isAuthLoading: isLoading, isAppActive, onReply: refreshReplies });
 
   useEffect(() => {
     const listener = AppState.addEventListener('change', (state) => setAppActive(state === 'active'));
@@ -77,11 +82,11 @@ export function CoachNotificationsProvider({ children }: { children: ReactNode }
     }
 
     await markChatThreadRead(threadId, userId, readThrough);
-    refreshCurrent.current?.();
-  }, [userId]);
+    refreshReplies();
+  }, [refreshReplies, userId]);
 
   const unreadReplies = snapshot?.userId === userId ? snapshot?.replies ?? emptyReplies : emptyReplies;
-  const value = useMemo(() => ({ unreadReplies, isAppActive, markReplyRead }), [unreadReplies, isAppActive, markReplyRead]);
+  const value = useMemo(() => ({ unreadReplies, isAppActive, pushSettings, markReplyRead }), [unreadReplies, isAppActive, pushSettings, markReplyRead]);
 
   return <CoachNotificationsContext.Provider value={value}>{children}</CoachNotificationsContext.Provider>;
 }
