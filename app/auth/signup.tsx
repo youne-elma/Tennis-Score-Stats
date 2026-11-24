@@ -9,6 +9,7 @@ import { AppCard } from '@/components/ui/app-card';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
 import { isEmailAlreadyRegisteredError, useAuth } from '@/contexts/auth-context';
+import { minimumPasswordLength } from '@/lib/supabase';
 
 const loginRoute = '/auth/login' as Href;
 
@@ -39,8 +40,8 @@ export default function SignupScreen() {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Weak password', 'Password must contain at least 6 characters.');
+    if (password.length < minimumPasswordLength) {
+      Alert.alert('Weak password', `Password must contain at least ${minimumPasswordLength} characters.`);
       return;
     }
 

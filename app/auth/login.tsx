@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { Href, router } from 'expo-router';
-import { useState } from 'react';
+import { Href, router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -14,9 +14,17 @@ const signupRoute = '/auth/signup' as Href;
 
 export default function LoginScreen() {
   const { continueOffline, signIn } = useAuth();
+  const { email: resetEmail, passwordReset } = useLocalSearchParams<{ email?: string; passwordReset?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (passwordReset === 'complete' && typeof resetEmail === 'string') {
+      setEmail(resetEmail);
+      setPassword('');
+    }
+  }, [passwordReset, resetEmail]);
 
   const enterOffline = () => {
     continueOffline();
@@ -43,8 +51,9 @@ export default function LoginScreen() {
     }
   };
 
-  const showPasswordResetSoon = () => {
-    Alert.alert('Password reset coming soon', 'Password reset will be added in a later step.');
+  const openPasswordRecovery = () => {
+    setPassword('');
+    router.push({ pathname: '/auth/reset-password', params: { email: email.trim() } } as Href);
   };
 
   return (
@@ -63,6 +72,11 @@ export default function LoginScreen() {
         </View>
 
         <AppCard style={styles.form}>
+          {passwordReset === 'complete' ? (
+            <Text accessibilityLiveRegion="polite" style={styles.success}>
+              Password updated. Sign in with your new password.
+            </Text>
+          ) : null}
           <AppInput
             label="Email"
             placeholder="you@example.com"
@@ -75,7 +89,11 @@ export default function LoginScreen() {
           <AppInput label="Password" placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
 
           <AppButton title={isSubmitting ? 'Logging in...' : 'Login'} icon="login" disabled={isSubmitting} onPress={submitLogin} />
-          <Pressable style={styles.textButton} onPress={showPasswordResetSoon}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSubmitting}
+            style={styles.textButton}
+            onPress={openPasswordRecovery}>
             <Text style={styles.textButtonLabel}>Forgot password?</Text>
           </Pressable>
         </AppCard>
@@ -155,6 +173,11 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 16,
+  },
+  success: {
+    color: AppTheme.colors.success,
+    fontSize: 14,
+    lineHeight: 20,
   },
   textButton: {
     alignItems: 'center',

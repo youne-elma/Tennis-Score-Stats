@@ -38,6 +38,12 @@ EXPO_PUBLIC_SUPABASE_KEY=
 
 For an existing Supabase database, run [player-archive.sql](supabase/player-archive.sql) to enable player archiving and preserve historical match references.
 
+### Password recovery
+
+In your Supabase project, open **Authentication → Email Templates → Reset Password** and save [the recovery template](supabase/templates/recovery.html) as the message body. The template displays the one-time code entered on the **Forgot password?** screen.
+
+Configure [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) for delivery to users outside your Supabase project team.
+
 ## Coach Chat
 
 For a new Supabase database, run `schema.sql`, `rls.sql`, `player-archive.sql`, `auth-trigger.sql`, `user-roles.sql`, `chat-schema.sql`, and `chat-rls.sql` from `supabase/` in that order.
