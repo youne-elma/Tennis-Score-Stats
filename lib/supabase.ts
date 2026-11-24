@@ -23,6 +23,30 @@ export const supabase =
       })
     : null;
 
+// Keep this key aligned with Supabase's default so existing sessions can be read offline.
+const sessionStorageKey = supabase && supabaseUrl
+  ? 'sb-' + new URL(supabaseUrl).hostname.split('.')[0] + '-auth-token'
+  : undefined;
+
+export async function readStoredSupabaseAccount() {
+  if (!sessionStorageKey) return null;
+  const raw = Platform.OS === 'web'
+    ? window.localStorage.getItem(sessionStorageKey)
+    : await AsyncStorage.getItem(sessionStorageKey);
+  const session = raw ? JSON.parse(raw) as { user?: { id?: string } } : null;
+  return typeof session?.user?.id === 'string' ? session.user.id : null;
+}
+
+export async function clearStoredSupabaseSession() {
+  if (!sessionStorageKey) return;
+  const keys = [sessionStorageKey, sessionStorageKey + '-code-verifier', sessionStorageKey + '-user'];
+  if (Platform.OS === 'web') {
+    keys.forEach((key) => window.localStorage.removeItem(key));
+  } else {
+    await AsyncStorage.removeMany(keys);
+  }
+}
+
 export function requireSupabase() {
   if (!supabase) {
     throw new Error(missingSupabaseMessage);

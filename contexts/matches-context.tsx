@@ -1,312 +1,253 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { AppState } from 'react-native';
 
 import { useAuth } from '@/contexts/auth-context';
 import { MatchFormValues, ServiceEvent, ServiceEventInput, TennisMatch } from '@/types/match';
-import {
-  createSupabaseMatch,
-  createSupabaseServiceEvent,
-  deleteSupabaseServiceEvent,
-  loadSupabaseMatches,
-  updateSupabaseMatch,
-  updateSupabaseServiceEvent,
-} from '@/utils/supabase-matches';
+import { AccountMatches, emptyAccountMatches, newMatchId, type MatchSyncStatus } from '@/utils/account-matches';
 import { loadMatches, saveMatches } from '@/utils/storage';
+import { calculateTennisScore } from '@/utils/tennis-score';
+
+type MatchSync = {
+  status: MatchSyncStatus;
+  conflict?: { remote: { match: TennisMatch; revision: number } | null };
+};
 
 type MatchesContextValue = {
   matches: TennisMatch[];
   isLoadingMatches: boolean;
   matchesLoadFailed: boolean;
+  cloudHistoryFailed: boolean;
+  writeError?: string;
   retryLoadMatches: () => void;
-  addMatch: (match: MatchFormValues) => void;
-  updateMatchStatus: (id: string, status: TennisMatch['status']) => void;
-  pauseMatch: (id: string, pauseReason: string) => void;
-  updateMatchSettings: (id: string, settings: Partial<MatchFormValues>) => void;
-  recordServiceEvent: (event: ServiceEventInput) => void;
-  updateServiceEvent: (matchId: string, eventId: string, event: Partial<ServiceEvent>) => void;
-  undoLastServiceEvent: (matchId: string) => void;
+  retryMatchSync: (matchId: string) => Promise<void>;
+  resolveMatchConflict: (matchId: string, conflict: NonNullable<MatchSync['conflict']>, choice: 'device' | 'online') => Promise<boolean>;
+  getMatchSync: (matchId: string) => MatchSync | undefined;
+  addMatch: (match: MatchFormValues) => Promise<boolean>;
+  updateMatchStatus: (id: string, status: TennisMatch['status']) => Promise<boolean>;
+  pauseMatch: (id: string, pauseReason: string) => Promise<boolean>;
+  updateMatchSettings: (id: string, settings: Partial<MatchFormValues>) => Promise<boolean>;
+  recordServiceEvent: (event: ServiceEventInput) => Promise<boolean>;
+  updateServiceEvent: (matchId: string, eventId: string, event: Partial<ServiceEvent>) => Promise<boolean>;
+  undoLastServiceEvent: (matchId: string) => Promise<boolean>;
 };
 
 const MatchesContext = createContext<MatchesContextValue | null>(null);
 const emptyMatches: TennisMatch[] = [];
+const noSubscription = () => () => undefined;
+const noAccountMatches = () => emptyAccountMatches;
 
 export function MatchesProvider({ children }: { children: ReactNode }) {
-  const { mode, user } = useAuth();
-  const [matches, setMatches] = useState<TennisMatch[]>([]);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  const [loadResult, setLoadResult] = useState<{ userId: string | null; attempt: number; failed: boolean }>();
-  const sourceUserId = mode === 'loading' ? undefined : mode === 'authenticated' ? user?.id : null;
-  const currentLoad = loadResult?.userId === sourceUserId && loadResult?.attempt === loadAttempt ? loadResult : undefined;
-  const isLoadingMatches = !currentLoad;
-  const matchesLoadFailed = currentLoad?.failed === true;
-  const retryLoadMatches = useCallback(() => setLoadAttempt((attempt) => attempt + 1), []);
+  const { mode, accountId, isOnline } = useAuth();
+  const store = useMemo(() => accountId ? new AccountMatches(accountId) : null, [accountId]);
+  const account = useSyncExternalStore(store?.subscribe ?? noSubscription, store?.getSnapshot ?? noAccountMatches, noAccountMatches);
+  const [guest, setGuest] = useState<{ matches: TennisMatch[]; failed: boolean }>();
+  const [guestAttempt, setGuestAttempt] = useState(0);
+  const [writeFailure, setWriteFailure] = useState<{ store: AccountMatches | null; message: string }>();
+  const guestWrite = useRef<Promise<unknown>>(Promise.resolve());
+  const sync = useRef<{ store: AccountMatches; request: (refresh?: boolean) => void }>(undefined);
+  const [isActive, setActive] = useState(() => !AppState.currentState || AppState.currentState === 'active');
+  const isGuest = mode !== 'loading' && !accountId;
+  const ready = account.load === 'ready';
 
   useEffect(() => {
-    if (sourceUserId === undefined) {
-      return;
-    }
+    const watcher = AppState.addEventListener('change', (state) => setActive(state === 'active'));
+    return () => watcher.remove();
+  }, []);
 
+  useEffect(() => {
+    if (store) void store.load();
+  }, [store]);
+
+  useEffect(() => {
+    if (!isGuest) return;
+    let active = true;
+    void guestWrite.current.then(loadMatches).then(
+      (matches) => { if (active) setGuest({ matches, failed: false }); },
+      () => { if (active) setGuest({ matches: emptyMatches, failed: true }); },
+    );
+    return () => { active = false; };
+  }, [guestAttempt, isGuest]);
+
+  useEffect(() => {
+    if (!store || !ready || mode !== 'authenticated' || !isOnline || !isActive) return;
+    const accountStore = store;
     const controller = new AbortController();
-    const userId = sourceUserId;
+    let running = false;
+    let requested = false;
+    let refreshNeeded = true;
 
-    async function loadMatchSource() {
+    async function run() {
+      if (running || controller.signal.aborted) return;
+      running = true;
       try {
-        const nextMatches = userId === null ? await loadMatches() : await loadSupabaseMatches(userId, controller.signal);
-
-        if (!controller.signal.aborted) {
-          setMatches(nextMatches);
-          setLoadResult({ userId, attempt: loadAttempt, failed: false });
-        }
-      } catch {
-        if (!controller.signal.aborted) {
-          setLoadResult({ userId, attempt: loadAttempt, failed: true });
-        }
+        do {
+          requested = false;
+          await accountStore.upload(controller.signal);
+          if (refreshNeeded && !controller.signal.aborted) {
+            refreshNeeded = false;
+            await accountStore.refresh(controller.signal);
+          }
+        } while (requested && !controller.signal.aborted);
+      } finally {
+        running = false;
       }
     }
 
-    void loadMatchSource();
-    return () => controller.abort();
-  }, [loadAttempt, sourceUserId]);
+    const request = (refresh = false) => {
+      requested = true;
+      refreshNeeded ||= refresh;
+      void run();
+    };
 
-  useEffect(() => {
-    if (sourceUserId !== null || isLoadingMatches || matchesLoadFailed) {
-      return;
+    sync.current = { store, request };
+    const interval = setInterval(() => request(accountStore.getSnapshot().refreshFailed), 12_000);
+    request();
+    return () => {
+      controller.abort();
+      clearInterval(interval);
+      sync.current = undefined;
+    };
+  }, [isActive, isOnline, mode, ready, store]);
+
+  const requestSync = useCallback((refresh = false) => {
+    if (sync.current?.store === store) sync.current.request(refresh);
+  }, [store]);
+
+  const retryLoadMatches = useCallback(() => {
+    if (store) {
+      void store.load().then(() => requestSync(true));
+    } else {
+      setGuest(undefined);
+      setGuestAttempt((attempt) => attempt + 1);
     }
+  }, [requestSync, store]);
 
-    saveMatches(matches).catch(() => {
-      Alert.alert('Storage error', 'Could not save matches.');
-    });
-  }, [isLoadingMatches, matches, matchesLoadFailed, sourceUserId]);
-
-  const value = useMemo(
-    () => ({
-      matches: isLoadingMatches || matchesLoadFailed ? emptyMatches : matches,
-      isLoadingMatches,
-      matchesLoadFailed,
-      retryLoadMatches,
-      addMatch: async (match: MatchFormValues) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            const createdMatch = await createSupabaseMatch(user.id, match);
-            setMatches((currentMatches) => [createdMatch, ...currentMatches]);
-          } catch {
-            Alert.alert('Matches error', 'Could not create match.');
-          }
-
-          return;
+  const updateMatch = useCallback(async (id: string, change: (match: TennisMatch | undefined) => TennisMatch | undefined) => {
+    setWriteFailure(undefined);
+    try {
+      if (store) {
+        if (store.getSnapshot().load !== 'ready') return false;
+        const saved = await store.edit(id, change);
+        if (saved) {
+          requestSync();
+        } else {
+          setWriteFailure({ store, message: 'The match changed. Check the score and try again.' });
         }
+        return saved;
+      }
 
-        setMatches((currentMatches) => [
-          {
-            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            createdAt: new Date().toISOString(),
-            status: 'Not started',
-            serviceEvents: [],
-            ...match,
-          },
-          ...currentMatches,
-        ]);
-      },
-      updateMatchStatus: async (id: string, status: TennisMatch['status']) => {
-        const endedAt = status === 'Ended' ? new Date().toISOString() : undefined;
-
-        if (mode === 'authenticated' && user) {
-          try {
-            const updatedMatch = await updateSupabaseMatch(id, user.id, { status, endedAt });
-            setMatches((currentMatches) =>
-              currentMatches.map((match) =>
-                match.id === id ? { ...updatedMatch, serviceEvents: match.serviceEvents } : match
-              )
-            );
-          } catch {
-            Alert.alert('Matches error', 'Could not update match status.');
-          }
-
-          return;
+      const operation = guestWrite.current.then(async () => {
+        const current = await loadMatches();
+        const existing = current.find((match) => match.id === id);
+        const match = change(existing);
+        if (!match) return false;
+        if (match !== existing) {
+          const matches = existing ? current.map((item) => item.id === id ? match : item) : [match, ...current];
+          await saveMatches(matches);
+          setGuest({ matches, failed: false });
         }
+        return true;
+      });
+      guestWrite.current = operation.catch(() => undefined);
+      return await operation;
+    } catch {
+      setWriteFailure({ store, message: 'Could not save the change on this device. Try again.' });
+      return false;
+    }
+  }, [requestSync, store]);
 
-        setMatches((currentMatches) =>
-          currentMatches.map((match) =>
-            match.id === id
-              ? {
-                  ...match,
-                  status,
-                  endedAt: endedAt ?? match.endedAt,
-                }
-              : match
-          )
-        );
-      },
-      pauseMatch: async (id: string, pauseReason: string) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            const updatedMatch = await updateSupabaseMatch(id, user.id, {
-              status: 'Paused',
-              pauseReason,
-            });
-            setMatches((currentMatches) =>
-              currentMatches.map((match) =>
-                match.id === id ? { ...updatedMatch, serviceEvents: match.serviceEvents } : match
-              )
-            );
-          } catch {
-            Alert.alert('Matches error', 'Could not pause match.');
-          }
+  const matches = useMemo(() => store
+    ? Object.values(account.entries).map(({ match }) => match).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    : isGuest ? guest?.matches ?? emptyMatches : emptyMatches, [account.entries, guest, isGuest, store]);
 
-          return;
-        }
-
-        setMatches((currentMatches) =>
-          currentMatches.map((match) =>
-            match.id === id
-              ? {
-                  ...match,
-                  status: 'Paused',
-                  pauseReason,
-                }
-              : match
-          )
-        );
-      },
-      updateMatchSettings: async (id: string, settings: Partial<MatchFormValues>) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            const updatedMatch = await updateSupabaseMatch(id, user.id, settings);
-            setMatches((currentMatches) =>
-              currentMatches.map((match) =>
-                match.id === id ? { ...updatedMatch, serviceEvents: match.serviceEvents } : match
-              )
-            );
-          } catch {
-            Alert.alert('Matches error', 'Could not update match settings.');
-          }
-
-          return;
-        }
-
-        setMatches((currentMatches) =>
-          currentMatches.map((match) => (match.id === id ? { ...match, ...settings } : match))
-        );
-      },
-      recordServiceEvent: async (event: ServiceEventInput) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            const createdEvent = await createSupabaseServiceEvent(user.id, event);
-            setMatches((currentMatches) =>
-              currentMatches.map((match) =>
-                match.id === event.matchId
-                  ? {
-                      ...match,
-                      serviceEvents: [...match.serviceEvents, createdEvent],
-                    }
-                  : match
-              )
-            );
-          } catch {
-            Alert.alert('Scoring error', 'Could not save service event.');
-          }
-
-          return;
-        }
-
-        setMatches((currentMatches) =>
-          currentMatches.map((match) =>
-            match.id === event.matchId
-              ? {
-                  ...match,
-                  serviceEvents: [
-                    ...match.serviceEvents,
-                    {
-                      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-                      createdAt: new Date().toISOString(),
-                      ...event,
-                    },
-                  ],
-                }
-              : match
-          )
-        );
-      },
-      updateServiceEvent: async (matchId: string, eventId: string, event: Partial<ServiceEvent>) => {
-        if (mode === 'authenticated' && user) {
-          try {
-            const updatedEvent = await updateSupabaseServiceEvent(matchId, eventId, user.id, event);
-            setMatches((currentMatches) =>
-              currentMatches.map((match) =>
-                match.id === matchId
-                  ? {
-                      ...match,
-                      serviceEvents: match.serviceEvents.map((serviceEvent) =>
-                        serviceEvent.id === eventId ? updatedEvent : serviceEvent
-                      ),
-                    }
-                  : match
-              )
-            );
-          } catch {
-            Alert.alert('Scoring error', 'Could not update service event.');
-          }
-
-          return;
-        }
-
-        setMatches((currentMatches) =>
-          currentMatches.map((match) =>
-            match.id === matchId
-              ? {
-                  ...match,
-                  serviceEvents: match.serviceEvents.map((serviceEvent) =>
-                    serviceEvent.id === eventId ? { ...serviceEvent, ...event } : serviceEvent
-                  ),
-                }
-              : match
-          )
-        );
-      },
-      undoLastServiceEvent: async (matchId: string) => {
-        if (mode === 'authenticated' && user) {
-          const match = matches.find((currentMatch) => currentMatch.id === matchId);
-          const lastEvent = match?.serviceEvents.at(-1);
-
-          if (!lastEvent) {
-            return;
-          }
-
-          try {
-            await deleteSupabaseServiceEvent(matchId, lastEvent.id, user.id);
-            setMatches((currentMatches) =>
-              currentMatches.map((currentMatch) =>
-                currentMatch.id === matchId
-                  ? {
-                      ...currentMatch,
-                      serviceEvents: currentMatch.serviceEvents.slice(0, -1),
-                    }
-                  : currentMatch
-              )
-            );
-          } catch {
-            Alert.alert('Scoring error', 'Could not undo service event.');
-          }
-
-          return;
-        }
-
-        setMatches((currentMatches) =>
-          currentMatches.map((match) =>
-            match.id === matchId
-              ? {
-                  ...match,
-                  serviceEvents: match.serviceEvents.slice(0, -1),
-                }
-              : match
-          )
-        );
-      },
+  const value = useMemo<MatchesContextValue>(() => ({
+    matches,
+    isLoadingMatches: store ? account.load === 'loading' || (!matches.length && account.refreshing) : !isGuest || !guest,
+    matchesLoadFailed: store ? account.load === 'failed' : Boolean(isGuest && guest?.failed),
+    cloudHistoryFailed: Boolean(store && account.refreshFailed),
+    writeError: writeFailure?.store === store ? writeFailure?.message : undefined,
+    retryLoadMatches,
+    retryMatchSync: async (matchId) => {
+      try {
+        await store?.clearBlockedMatch(matchId);
+        requestSync();
+      } catch {
+        setWriteFailure({ store, message: 'Could not read the saved match. Try again.' });
+      }
+    },
+    resolveMatchConflict: async (matchId, conflict, choice) => {
+      if (!store) return false;
+      try {
+        const resolved = await store.resolve(matchId, conflict, choice);
+        if (resolved) requestSync();
+        return resolved;
+      } catch {
+        setWriteFailure({ store, message: 'Could not save your choice. Try again.' });
+        return false;
+      }
+    },
+    getMatchSync: (matchId) => {
+      const entry = account.entries[matchId];
+      if (!entry) return undefined;
+      if (entry.conflict) return { status: 'conflict', conflict: entry.conflict };
+      if (entry.blocked) return { status: 'blocked' };
+      if (account.uploadingId === matchId) return { status: 'syncing' };
+      if (!entry.pendingId) return { status: 'synced' };
+      return { status: isOnline && account.failedUploads.has(matchId) ? 'failed' : 'pending' };
+    },
+    addMatch: async (form) => {
+      const id = newMatchId();
+      return updateMatch(id, () => ({
+        ...form,
+        id,
+        createdAt: new Date().toISOString(),
+        status: 'Not started',
+        serviceEvents: [],
+      }));
+    },
+    updateMatchStatus: (id, status) => updateMatch(id, (match) => {
+      if (!match || match.status === status) return match;
+      return {
+        ...match,
+        status,
+        endedAt: status === 'Ended' ? new Date().toISOString() : undefined,
+      };
     }),
-    [isLoadingMatches, matches, matchesLoadFailed, mode, retryLoadMatches, user]
-  );
+    pauseMatch: (id, pauseReason) => updateMatch(id, (match) =>
+      match ? { ...match, status: 'Paused', pauseReason } : undefined),
+    updateMatchSettings: (id, settings) => updateMatch(id, (match) =>
+      match ? withServiceEvents({ ...match, ...settings }, match.serviceEvents) : undefined),
+    recordServiceEvent: (event) => updateMatch(event.matchId, (match) => {
+      if (!match || match.status === 'Ended') return undefined;
+      const score = calculateTennisScore(match);
+      const last = match.serviceEvents.at(-1);
+      const phase = last?.phase === 'First Serve' && last.action === 'Fault' ? 'Second Serve' : 'First Serve';
+      if (score.matchWinnerId || event.serverId !== score.currentServerId || event.phase !== phase) return undefined;
+      const now = Math.max(Date.now(), last ? Date.parse(last.createdAt) + 1 : 0);
+      const next = { ...event, id: newMatchId(), createdAt: new Date(now).toISOString() };
+      return withServiceEvents({ ...match, status: 'In progress' }, [...match.serviceEvents, next]);
+    }),
+    updateServiceEvent: (matchId, eventId, event) => updateMatch(matchId, (match) => {
+      if (!match || !match.serviceEvents.some((item) => item.id === eventId)) return undefined;
+      return withServiceEvents(match, match.serviceEvents.map((item) =>
+        item.id === eventId ? { ...item, ...event, id: item.id, matchId, createdAt: item.createdAt } : item));
+    }),
+    undoLastServiceEvent: (matchId) => updateMatch(matchId, (match) =>
+      match?.serviceEvents.length ? withServiceEvents(match, match.serviceEvents.slice(0, -1)) : undefined),
+  }), [account, guest, isGuest, isOnline, matches, requestSync, retryLoadMatches, store, updateMatch, writeFailure]);
 
   return <MatchesContext.Provider value={value}>{children}</MatchesContext.Provider>;
+}
+
+function withServiceEvents(match: TennisMatch, serviceEvents: ServiceEvent[]): TennisMatch {
+  const updated = { ...match, serviceEvents };
+  if (calculateTennisScore(updated).matchWinnerId) {
+    return { ...updated, status: 'Ended', endedAt: match.endedAt ?? new Date().toISOString() };
+  }
+  if (match.status === 'Ended' && calculateTennisScore(match).matchWinnerId) {
+    return { ...updated, status: 'In progress', endedAt: undefined };
+  }
+  return updated;
 }
 
 export function useMatches() {

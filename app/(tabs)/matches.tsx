@@ -1,6 +1,6 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -14,6 +14,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 
+import { MatchSyncNotice } from "@/components/match-sync-notice";
 import { AppButton } from "@/components/ui/app-button";
 import { AppCard } from "@/components/ui/app-card";
 import { AppModal } from "@/components/ui/app-modal";
@@ -48,10 +49,12 @@ const defaultForm: MatchFormValues = {
 
 export default function MatchesScreen() {
   const insets = useSafeAreaInsets();
-  const { players, activePlayers } = usePlayers();
-  const { matches, isLoadingMatches, matchesLoadFailed, retryLoadMatches, addMatch } = useMatches();
+  const { players, activePlayers, canEditPlayers } = usePlayers();
+  const { matches, isLoadingMatches, matchesLoadFailed, cloudHistoryFailed, writeError, retryLoadMatches, addMatch } = useMatches();
   const [formVisible, setFormVisible] = useState(false);
   const [form, setForm] = useState<MatchFormValues>(defaultForm);
+  const [isSaving, setSaving] = useState(false);
+  const saving = useRef(false);
 
   const canCreateMatch = activePlayers.length >= 2;
   const selectedPlayersAreActive = activePlayers.some((player) => player.id === form.player1Id)
@@ -80,7 +83,8 @@ export default function MatchesScreen() {
     setFormVisible(true);
   };
 
-  const saveMatch = () => {
+  const saveMatch = async () => {
+    if (saving.current) return;
     if (!selectedPlayersAreActive) {
       Alert.alert("Missing players", "Select two active players.");
       return;
@@ -99,8 +103,16 @@ export default function MatchesScreen() {
       return;
     }
 
-    addMatch(form);
-    setFormVisible(false);
+    saving.current = true;
+    setSaving(true);
+    try {
+      if (await addMatch(form)) {
+        setFormVisible(false);
+      }
+    } finally {
+      saving.current = false;
+      setSaving(false);
+    }
   };
 
   return (
@@ -149,9 +161,17 @@ export default function MatchesScreen() {
           <Text style={styles.bodyText}>
             {canCreateMatch
               ? "You can create a match and prepare service scoring."
-              : "Go back to Players and create the missing player profiles first."}
+              : canEditPlayers ? "Go back to Players and create the missing player profiles first."
+                : "Connect to load your players or add the missing profiles."}
           </Text>
         </AppCard>
+
+        {cloudHistoryFailed ? (
+          <AppCard style={styles.heroPanel}>
+            <Text accessibilityRole="alert" style={styles.heroText}>Could not refresh online history. You can use your saved matches.</Text>
+            <AppButton title="Retry history sync" icon="refresh" variant="secondary" onPress={retryLoadMatches} />
+          </AppCard>
+        ) : null}
 
         {isLoadingMatches ? (
           <AppCard style={styles.heroPanel}>
@@ -183,7 +203,8 @@ export default function MatchesScreen() {
             <Text style={styles.heroText}>
               {canCreateMatch
                 ? "Use the + button to create your first tennis match."
-                : "Create at least two players before starting match setup."}
+                : canEditPlayers ? "Create at least two players before starting match setup."
+                  : "Connect to load player profiles for your first match."}
             </Text>
             {canCreateMatch ? (
               <AppButton
@@ -234,7 +255,7 @@ export default function MatchesScreen() {
       <AppModal
         title="New match"
         visible={formVisible}
-        onClose={() => setFormVisible(false)}
+        onClose={() => { if (!isSaving) setFormVisible(false); }}
       >
         <ScrollView
           contentContainerStyle={styles.formContent}
@@ -368,10 +389,11 @@ export default function MatchesScreen() {
             player2={playerById.get(form.player2Id)}
           />
 
+          {writeError ? <Text accessibilityRole="alert" style={styles.bodyText}>{writeError}</Text> : null}
           <AppButton
-            title="Create match"
+            title={isSaving ? "Saving…" : "Create match"}
             icon="check"
-            disabled={!isHistoryReady || !selectedPlayersAreActive}
+            disabled={isSaving || !isHistoryReady || !selectedPlayersAreActive}
             onPress={saveMatch}
           />
         </ScrollView>
@@ -420,6 +442,8 @@ function MatchCard({
           value={match.deuceScoring.startsWith("No-Ad") ? "No-Ad" : "Adv"}
         />
       </View>
+
+      <MatchSyncNotice match={match} />
 
       <AppButton
         title={

@@ -40,6 +40,16 @@ EXPO_PUBLIC_SUPABASE_KEY=
 
 For an existing Supabase database, run [player-archive.sql](supabase/player-archive.sql) to enable player archiving and preserve historical match references.
 
+### Score matches without a connection
+
+Apply [match-sync.sql](supabase/match-sync.sql) after the match schema, policies, and player archiving script before distributing this build. The migration preserves the order of existing service events and supports writes from earlier app versions.
+
+Sign in once on the device and load your players and matches. You can then create a match with saved players, record and correct serves, and finish the match offline. When you reopen the app, use **Continue with your account** to access those matches. **Saved on this device** means the match is queued for upload. The app retries while open with a connection and a session for the same account.
+
+On the web, open the app in the browser before going offline.
+
+If the match was also edited online, open **Review versions** to choose which score to keep. A new offline match involving a player archived online remains available on the device with its sync status.
+
 ### Password recovery
 
 In your Supabase project, open **Authentication → Email Templates → Reset Password** and save [the recovery template](supabase/templates/recovery.html) as the message body. The template displays the one-time code entered on the **Forgot password?** screen.

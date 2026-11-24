@@ -39,7 +39,7 @@ const ballDrift = {
 };
 
 export default function AuthGatewayScreen() {
-  const { continueOffline } = useAuth();
+  const { accountId, continueOffline } = useAuth();
 
   const enterOffline = () => {
     continueOffline();
@@ -63,9 +63,17 @@ export default function AuthGatewayScreen() {
         </View>
 
         <View style={styles.actions}>
+          {accountId ? (
+            <AppButton
+              title="Continue with your account"
+              icon="sports-tennis"
+              onPress={() => router.replace("/mode")}
+            />
+          ) : null}
           <AppButton
-            title="Continue offline"
+            title={accountId ? "Continue as guest" : "Continue offline"}
             icon="sports-tennis"
+            variant={accountId ? "secondary" : "primary"}
             onPress={enterOffline}
           />
           <AppButton

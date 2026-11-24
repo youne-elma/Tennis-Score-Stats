@@ -1,6 +1,6 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppCard } from '@/components/ui/app-card';
@@ -9,13 +9,18 @@ import { useAuth } from '@/contexts/auth-context';
 import { useCoachNotifications } from '@/contexts/coach-notifications-context';
 
 export default function ScoreModeScreen() {
-  const { mode, signOut } = useAuth();
+  const { accountId, mode, isOnline, signOut } = useAuth();
   const { unreadReplies } = useCoachNotifications();
-  const canUseCoachChat = mode === 'authenticated';
+  const canUseCoachChat = mode === 'authenticated' && isOnline;
 
   const leaveMode = async () => {
-    if (mode === 'authenticated') {
-      await signOut();
+    if (accountId) {
+      try {
+        await signOut();
+      } catch {
+        Alert.alert('Sign-out error', 'Could not clear the saved session. Try again.');
+        return;
+      }
     }
 
     router.replace('/');
@@ -55,14 +60,14 @@ export default function ScoreModeScreen() {
               <Text style={styles.optionText}>
                 {canUseCoachChat
                   ? 'Ask a coach for feedback on your service stats.'
-                  : 'Available when you login with an account.'}
+                  : accountId ? 'Connect to use Coach Chat.' : 'Available when you login with an account.'}
               </Text>
               {unreadReplies.length > 0 ? <Text style={styles.comingSoon}>New reply</Text> : null}
             </View>
             {canUseCoachChat ? (
               <MaterialIcons name="chevron-right" size={25} color={AppTheme.colors.primary} />
             ) : (
-              <Text style={styles.comingSoon}>Login</Text>
+              <Text style={styles.comingSoon}>{accountId ? 'Offline' : 'Login'}</Text>
             )}
           </Pressable>
         </AppCard>

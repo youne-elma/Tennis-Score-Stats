@@ -8,12 +8,16 @@ const storageKeys = {
   matches: 'tennis-score-stats.matches.v1',
 };
 
-export async function loadPlayers() {
-  return loadJson<Player[]>(storageKeys.players, []);
+function playersKey(accountId?: string | null) {
+  return accountId ? storageKeys.players + '.' + accountId : storageKeys.players;
 }
 
-export async function savePlayers(players: Player[]) {
-  await AsyncStorage.setItem(storageKeys.players, JSON.stringify(players));
+export async function loadPlayers(accountId?: string | null) {
+  return loadJson<Player[]>(playersKey(accountId), []);
+}
+
+export async function savePlayers(players: Player[], accountId?: string | null) {
+  await AsyncStorage.setItem(playersKey(accountId), JSON.stringify(players));
 }
 
 export async function loadMatches() {

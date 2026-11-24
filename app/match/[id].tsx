@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MatchSyncNotice } from '@/components/match-sync-notice';
 import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
 import { AppModal } from '@/components/ui/app-modal';
@@ -56,7 +57,7 @@ export default function MatchScoringScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
-  const { mode, user } = useAuth();
+  const { mode, user, isOnline } = useAuth();
   const {
     matches,
     isLoadingMatches,
@@ -70,7 +71,7 @@ export default function MatchScoringScreen() {
     updateServiceEvent,
   } = useMatches();
   const { players, isLoadingPlayers } = usePlayers();
-  const [recentAction, setRecentAction] = useState('No service action recorded yet.');
+  const [recentAction, setRecentAction] = useState<string>();
   const [pendingService, setPendingService] = useState<PendingService | null>(null);
   const [serviceDetail, setServiceDetail] = useState<ServiceDetailForm>(defaultServiceDetail);
   const [statsVisible, setStatsVisible] = useState(false);
@@ -82,6 +83,10 @@ export default function MatchScoringScreen() {
   const [editingEvent, setEditingEvent] = useState<ServiceEvent | null>(null);
   const [editDetail, setEditDetail] = useState<ServiceDetailForm>(defaultServiceDetail);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [endVisible, setEndVisible] = useState(false);
+  const savingAction = useRef(false);
+  const [isSavingAction, setSavingAction] = useState(false);
+  const recoveredStatus = useRef<string>(undefined);
 
   const match = matches.find((currentMatch) => currentMatch.id === id);
   const playerById = useMemo(() => new Map(players.map((player) => [player.id, player])), [players]);
@@ -97,23 +102,17 @@ export default function MatchScoringScreen() {
   const bottomInset = Math.max(insets.bottom, 10);
 
   useEffect(() => {
-    if (!match) {
-      return;
+    if (!match) return;
+    const status = score?.matchWinnerId && match.status !== 'Ended' ? 'Ended'
+      : match.status === 'Not started' ? 'In progress' : undefined;
+    if (status) {
+      const recovery = match.id + ':' + status;
+      if (recoveredStatus.current !== recovery) {
+        recoveredStatus.current = recovery;
+        void updateMatchStatus(match.id, status);
+      }
     }
-
-    if (match.status === 'Not started') {
-      updateMatchStatus(match.id, 'In progress');
-    }
-  }, [match, updateMatchStatus]);
-
-  useEffect(() => {
-    if (!match || !score?.matchWinnerId || match.status === 'Ended') {
-      return;
-    }
-
-    updateMatchStatus(match.id, 'Ended');
-    setRecentAction(`${formatPlayerName(playerById.get(score.matchWinnerId))} wins the match.`);
-  }, [match, playerById, score?.matchWinnerId, updateMatchStatus]);
+  }, [match, score?.matchWinnerId, updateMatchStatus]);
 
   if (!match || !player1 || !player2) {
     const isLoadingMatch = isLoadingMatches || isLoadingPlayers;
@@ -137,7 +136,7 @@ export default function MatchScoringScreen() {
   }
 
   async function shareMatchStats() {
-    if (shareInFlight.current || mode !== 'authenticated' || !user || !player1 || !player2 || !score || !stats) {
+    if (shareInFlight.current || mode !== 'authenticated' || !isOnline || !user || !player1 || !player2 || !score || !stats) {
       return;
     }
 
@@ -198,6 +197,18 @@ export default function MatchScoringScreen() {
     setServiceDetail(defaultServiceDetail);
   };
 
+  async function saveAction(write: () => Promise<boolean>, onSaved: () => void) {
+    if (savingAction.current) return;
+    savingAction.current = true;
+    setSavingAction(true);
+    try {
+      if (await write()) onSaved();
+    } finally {
+      savingAction.current = false;
+      setSavingAction(false);
+    }
+  }
+
   const saveServiceDetail = () => {
     if (!pendingService || !currentServer) {
       return;
@@ -215,7 +226,7 @@ export default function MatchScoringScreen() {
           ? player2
           : undefined;
 
-    recordServiceEvent({
+    void saveAction(() => recordServiceEvent({
       matchId: match.id,
       serverId: currentServer.id,
       phase: pendingService.phase,
@@ -224,21 +235,15 @@ export default function MatchScoringScreen() {
       zone: pendingService.action === 'In Play' ? undefined : serviceDetail.zone,
       faultType: pendingService.action === 'Fault' ? serviceDetail.faultType : undefined,
       pointWinnerId: pendingService.action === 'In Play' ? serviceDetail.pointWinnerId : undefined,
-    });
-
-    if (match.status === 'Paused') {
-      updateMatchStatus(match.id, 'In progress');
-    }
-
-    const detail =
-      pendingService.action === 'In Play'
+    }), () => {
+      const detail = pendingService.action === 'In Play'
         ? `point won by ${formatPlayerName(pointWinner)}`
         : `${serviceDetail.serveType}, ${serviceDetail.zone}${
             pendingService.action === 'Fault' ? `, ${serviceDetail.faultType}` : ''
           }`;
-
-    setRecentAction(`${pendingService.phase}: ${formatPlayerName(currentServer)} - ${pendingService.action} (${detail})`);
-    closeServiceDetail();
+      setRecentAction(`${pendingService.phase}: ${formatPlayerName(currentServer)} - ${pendingService.action} (${detail})`);
+      closeServiceDetail();
+    });
   };
 
   const openEditLastEvent = () => {
@@ -261,22 +266,24 @@ export default function MatchScoringScreen() {
       return;
     }
 
-    updateServiceEvent(match.id, editingEvent.id, {
+    void saveAction(() => updateServiceEvent(match.id, editingEvent.id, {
       serveType: editingEvent.action === 'In Play' ? undefined : editDetail.serveType,
       zone: editingEvent.action === 'In Play' ? undefined : editDetail.zone,
       faultType: editingEvent.action === 'Fault' ? editDetail.faultType : undefined,
       pointWinnerId: editingEvent.action === 'In Play' ? editDetail.pointWinnerId : undefined,
+    }), () => {
+      setRecentAction('Last service event edited.');
+      setEditingEvent(null);
     });
-    setRecentAction('Last service event edited.');
-    setEditingEvent(null);
   };
 
   const savePause = () => {
     const reason = pauseReason.trim() || 'No reason provided';
-    pauseMatch(match.id, reason);
-    setRecentAction(`Match paused: ${reason}`);
-    setPauseVisible(false);
-    setPauseReason('');
+    void saveAction(() => pauseMatch(match.id, reason), () => {
+      setRecentAction(`Match paused: ${reason}`);
+      setPauseVisible(false);
+      setPauseReason('');
+    });
   };
 
   return (
@@ -351,11 +358,19 @@ export default function MatchScoringScreen() {
           ))}
         </AppCard>
 
-        <ServeActionPanel phase={activeServePhase} disabled={isMatchEnded} onAction={handleServiceAction} />
+        <MatchSyncNotice match={match} />
+
+        <ServeActionPanel phase={activeServePhase} disabled={isMatchEnded || isSavingAction} onAction={handleServiceAction} />
+
+        <MatchWriteError />
 
         <AppCard style={styles.eventCard}>
           <Text style={styles.sectionTitle}>Last action</Text>
-          <Text style={styles.bodyText}>{recentAction}</Text>
+          <Text style={styles.bodyText}>
+            {recentAction ?? (lastEvent
+              ? lastEvent.phase + ': ' + formatPlayerName(playerById.get(lastEvent.serverId)) + ' - ' + lastEvent.action
+              : 'No service action recorded yet.')}
+          </Text>
           <Text style={styles.eventCount}>{match.serviceEvents.length} service event(s) recorded</Text>
         </AppCard>
 
@@ -404,8 +419,7 @@ export default function MatchScoringScreen() {
               return;
             }
 
-            undoLastServiceEvent(match.id);
-            setRecentAction('Last service event undone.');
+            void saveAction(() => undoLastServiceEvent(match.id), () => setRecentAction('Last service event undone.'));
           }}
         />
         <MatchNavButton icon="edit" label="Edit" onPress={openEditLastEvent} />
@@ -417,19 +431,7 @@ export default function MatchScoringScreen() {
         <MatchNavButton
           icon="stop"
           label="End"
-          onPress={() =>
-            Alert.alert('End match', 'End this match?', [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'End',
-                style: 'destructive',
-                onPress: () => {
-                  updateMatchStatus(match.id, 'Ended');
-                  router.replace('/(tabs)/matches');
-                },
-              },
-            ])
-          }
+          onPress={() => setEndVisible(true)}
         />
         <MatchNavButton icon="settings" label="Settings" onPress={() => setSettingsVisible(true)} />
       </View>
@@ -455,7 +457,7 @@ export default function MatchScoringScreen() {
           player2Stats={stats.player2}
           totalPoints={stats.totalPoints}
           shareStatus={shareStatsStatus}
-          onShare={mode === 'authenticated' && user ? shareMatchStats : undefined}
+          onShare={mode === 'authenticated' && user && isOnline ? shareMatchStats : undefined}
           onOpenFullStats={() => {
             setStatsVisible(false);
             setFullStatsVisible(true);
@@ -499,14 +501,32 @@ export default function MatchScoringScreen() {
         visible={settingsVisible}
         match={match}
         onClose={() => setSettingsVisible(false)}
-        onSave={(settings) => {
-          updateMatchSettings(match.id, settings);
+        onSave={(settings) => saveAction(() => updateMatchSettings(match.id, settings), () => {
           setRecentAction('Match settings updated.');
           setSettingsVisible(false);
-        }}
+        })}
       />
+
+      <AppModal title="End match?" visible={endVisible} onClose={() => { if (!isSavingAction) setEndVisible(false); }}>
+        <MatchWriteError />
+        <AppButton
+          title="End match"
+          icon="stop"
+          variant="danger"
+          disabled={isSavingAction}
+          onPress={() => saveAction(() => updateMatchStatus(match.id, 'Ended'), () => {
+            setEndVisible(false);
+            router.replace('/(tabs)/matches');
+          })}
+        />
+      </AppModal>
     </SafeAreaView>
   );
+}
+
+function MatchWriteError() {
+  const { writeError } = useMatches();
+  return writeError ? <Text accessibilityRole="alert" style={styles.bodyText}>{writeError}</Text> : null;
 }
 
 function PlayerScorePanel({
@@ -558,6 +578,7 @@ function PauseModal({
             onChangeText={onChange}
           />
         </View>
+        <MatchWriteError />
         <AppButton title="Pause match" icon="pause" onPress={onSave} />
       </View>
     </AppModal>
@@ -651,6 +672,7 @@ function EditEventModal({
           />
         ) : null}
 
+        <MatchWriteError />
         <AppButton title="Save edit" icon="check" onPress={onSave} />
       </ScrollView>
     </AppModal>
@@ -729,6 +751,7 @@ function SettingsModal({
             { label: 'No-Ad', value: 'No-Ad (Short Deuce)' },
           ]}
         />
+        <MatchWriteError />
         <AppButton
           title="Save settings"
           icon="check"
@@ -1016,6 +1039,7 @@ function ServiceDetailModal({
           />
         ) : null}
 
+        <MatchWriteError />
         <AppButton title="Save service event" icon="check" onPress={onSave} />
       </ScrollView>
     </AppModal>

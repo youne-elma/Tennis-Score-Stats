@@ -47,7 +47,7 @@ export default function PlayersScreen() {
   const { mode } = useAuth();
   const { unreadReplies } = useCoachNotifications();
   const hasUnreadReply = unreadReplies.length > 0;
-  const { activePlayers, isLoadingPlayers, addPlayer, updatePlayer, archivePlayer } =
+  const { activePlayers, isLoadingPlayers, canEditPlayers, addPlayer, updatePlayer, archivePlayer } =
     usePlayers();
   const [formVisible, setFormVisible] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
@@ -86,6 +86,7 @@ export default function PlayersScreen() {
   };
 
   const savePlayer = () => {
+    if (!canEditPlayers) return;
     const nextPlayer = {
       ...form,
       firstName: form.firstName.trim(),
@@ -213,7 +214,9 @@ export default function PlayersScreen() {
           <Text style={styles.noticeText}>
             {activePlayers.length >= 2
               ? "You have enough players to create a match."
-              : `Create ${2 - activePlayers.length} more player${activePlayers.length === 1 ? "" : "s"} before starting a match.`}
+              : canEditPlayers
+                ? `Create ${2 - activePlayers.length} more player${activePlayers.length === 1 ? "" : "s"} before starting a match.`
+                : "Connect to load your players before starting a match."}
           </Text>
         </AppCard>
 
@@ -234,17 +237,18 @@ export default function PlayersScreen() {
             <PlayerAvatar size={58} />
             <Text style={styles.emptyTitle}>No active players</Text>
             <Text style={styles.emptyText}>
-              Create players to set up your next match.
+              {canEditPlayers ? "Create players to set up your next match." : "Connect to load or create player profiles."}
             </Text>
             <AppButton
               title="Create player"
               icon="add"
+              disabled={!canEditPlayers}
               onPress={openCreateForm}
             />
           </AppCard>
         ) : (
           activePlayers.map((player) => (
-            <Pressable key={player.id} onPress={() => openEditForm(player)}>
+            <Pressable key={player.id} disabled={!canEditPlayers} onPress={() => openEditForm(player)}>
               <AppCard style={styles.playerCard}>
                 <PlayerAvatar photoUri={player.photoUri} />
                 <View style={styles.playerInfo}>
@@ -258,18 +262,18 @@ export default function PlayersScreen() {
                     Birthday: {player.birthdayDate}
                   </Text>
                 </View>
-                <MaterialIcons
+                {canEditPlayers ? <MaterialIcons
                   name="edit"
                   size={22}
                   color={AppTheme.colors.primary}
-                />
+                /> : null}
               </AppCard>
             </Pressable>
           ))
         )}
       </ScrollView>
 
-      <Pressable
+      {canEditPlayers ? <Pressable
         style={[styles.fab, { bottom: 40 + Math.max(insets.bottom) }]}
         onPress={openCreateForm}
       >
@@ -278,7 +282,7 @@ export default function PlayersScreen() {
           size={32}
           color={AppTheme.colors.textOnPrimary}
         />
-      </Pressable>
+      </Pressable> : null}
 
       <AppModal
         title={isConfirmingArchive ? "Archive player" : editingPlayer ? "Edit player" : "New player"}
