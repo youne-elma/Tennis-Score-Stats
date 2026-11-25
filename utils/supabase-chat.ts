@@ -69,6 +69,20 @@ export async function loadChatThread(threadId: string) {
   return data ? fromSupabaseChatThread(data) : null;
 }
 
+export async function loadChatCoaches() {
+  const { data, error } = await requireSupabase().rpc('list_chat_coaches');
+  if (error) throw error;
+  return (data ?? []) as { user_id: string; name: string }[];
+}
+
+export async function assignChatCoach(threadId: string, coachId: string | null) {
+  const { error } = await requireSupabase().rpc('assign_chat_coach', {
+    p_thread_id: threadId,
+    p_coach_id: coachId,
+  });
+  if (error) throw error;
+}
+
 export async function loadChatThreads() {
   const { data, error } = await requireSupabase()
     .from('chat_threads')

@@ -8,8 +8,8 @@ insert into auth.users (id, email) values
 
 update public.user_roles set role = 'coach' where user_id = '81000000-0000-4000-8000-000000000003';
 
-insert into public.chat_threads (id, created_by) values
-  ('82000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001');
+insert into public.chat_threads (id, created_by, assigned_coach_id) values
+  ('82000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000001', '81000000-0000-4000-8000-000000000003');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '81000000-0000-4000-8000-000000000001', true);

@@ -97,15 +97,29 @@ begin
 end;
 $$;
 
+select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000005', true);
+select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000005","role":"authenticated"}', true);
+select public.assign_chat_coach(
+  '20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000004'
+);
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', true);
 select set_config('request.jwt.claims', '{"sub":"10000000-0000-4000-8000-000000000004","role":"authenticated"}', true);
 
 do $$
 begin
-  if (select count(*) from public.chat_threads) <> 4
-    or (select count(*) from public.chat_messages) <> 4 then
-    raise exception 'A coach cannot see the conversations they are meant to manage';
+  if (select count(*) from public.chat_threads) <> 1
+    or (select count(*) from public.chat_messages) <> 1
+    or not exists (select 1 from public.chat_threads where id = '20000000-0000-4000-8000-000000000002') then
+    raise exception 'The coach inbox must contain only the assigned conversation';
   end if;
+
+  begin
+    perform public.assign_chat_coach('20000000-0000-4000-8000-000000000001', auth.uid());
+    raise exception 'A coach can change assignments';
+  exception when insufficient_privilege then
+    null;
+  end;
 
   insert into public.chat_participants (thread_id, user_id, participant_role)
   values ('20000000-0000-4000-8000-000000000002', '10000000-0000-4000-8000-000000000004', 'coach');

@@ -53,5 +53,5 @@ export function useChatQuery<T>(load: () => Promise<T>) {
     }, [load])
   );
 
-  return { data, loadFailed, refresh };
+  return { data, loadFailed, refresh, setData };
 }

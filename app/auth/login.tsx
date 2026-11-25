@@ -9,12 +9,14 @@ import { AppCard } from '@/components/ui/app-card';
 import { AppInput } from '@/components/ui/app-input';
 import { AppTheme } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
+import { isCoachApplicationId } from '@/utils/coach-applications';
 
 const signupRoute = '/auth/signup' as Href;
 
 export default function LoginScreen() {
   const { continueOffline, signIn } = useAuth();
-  const { email: resetEmail, passwordReset } = useLocalSearchParams<{ email?: string; passwordReset?: string }>();
+  const { email: resetEmail, passwordReset, coachApplicationId } =
+    useLocalSearchParams<{ email?: string; passwordReset?: string; coachApplicationId?: string }>();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,7 +45,11 @@ export default function LoginScreen() {
 
     try {
       await signIn(nextEmail, password);
-      router.replace('/mode');
+      if (isCoachApplicationId(coachApplicationId)) {
+        router.replace(`/coach-applications?applicationId=${coachApplicationId}` as Href);
+      } else {
+        router.replace(coachApplicationId === 'inbox' ? '/coach-applications' as Href : '/mode');
+      }
     } catch (error) {
       Alert.alert('Login failed', getAuthErrorMessage(error));
     } finally {

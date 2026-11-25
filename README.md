@@ -60,11 +60,22 @@ Configure [custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp) for del
 
 For a new Supabase database, run `schema.sql`, `rls.sql`, `player-archive.sql`, `auth-trigger.sql`, `user-roles.sql`, `chat-schema.sql`, and `chat-rls.sql` from `supabase/` in that order.
 
-Open **Coach Chat** with a regular account to start a conversation. Give the coach's Auth user the `coach` role in the `user_roles` table to let them open the inbox and reply.
+Open **Coach Chat** with a regular account to start a conversation. An admin can open any conversation and choose **Assign coach**. Each coach receives the conversations assigned to their account.
+
+For an existing database, reapply [chat-rls.sql](supabase/chat-rls.sql). On upgrade it assigns previously unassigned conversations to the last coach who replied, where there is one. The admin can assign the remaining conversations from **Coach Chat**.
 
 From **Match stats**, choose **Share with coach** to post a copy of the score and service statistics in Coach Chat.
 
 Open conversations refresh automatically. To enable immediate delivery, add `chat_messages` to the `supabase_realtime` publication in your Supabase project.
+
+### Coach applications by email
+
+1. Apply [coach-applications.sql](supabase/coach-applications.sql) after the Coach Chat schema and policies. The account reviewing applications needs the `admin` role in `user_roles`.
+2. In the Supabase Edge Function secrets, set `RESEND_API_KEY`, `COACH_APPLICATION_FROM` (a sender on your Resend-verified domain), `COACH_APPLICATION_TO` (the admin inbox), `COACH_APPLICATION_REVIEW_URL` (the complete HTTPS URL of `/coach-applications` on the deployed web app), and a random `COACH_APPLICATION_WORKER_SECRET`.
+3. In Supabase Vault, save the same worker secret as `coach_application_worker_secret` and the project's HTTPS API URL as `coach_application_project_url`.
+4. Deploy the worker with `supabase functions deploy coach-application-email --project-ref YOUR_PROJECT_REF --no-verify-jwt`. The worker checks the shared secret on each call.
+5. Apply [coach-applications-schedule.sql](supabase/coach-applications-schedule.sql) to wake the worker on new applications and retry delivery through Supabase Cron. Applications remain available in the admin inbox while email is pending or has failed.
+6. Submit a test application from **Coach Chat → Become a coach** with a player account. Open the email link with the admin account, then select **Approve as coach** or **Decline**. An approved account receives the `coach` role. The player can see the decision in **Coach Chat**.
 
 ### Mobile notifications for coach replies
 

@@ -1,9 +1,10 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, type Href } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { CoachAssignment } from '@/components/coach-chat/coach-assignment';
 import { CoachConversation } from '@/components/coach-chat/conversation';
 import { AppButton } from '@/components/ui/app-button';
 import { AppCard } from '@/components/ui/app-card';
@@ -57,8 +58,12 @@ export default function CoachChatScreen() {
 }
 
 function CoachThread({ threadId, userId }: { threadId: string; userId: string }) {
-  const loadThread = useCallback(() => loadChatThread(threadId), [threadId]);
-  const { data: thread, loadFailed, refresh } = useChatQuery(loadThread);
+  const loadThread = useCallback(async () => {
+    const [thread, role] = await Promise.all([loadChatThread(threadId), loadUserRole(userId)]);
+    return { thread, role };
+  }, [threadId, userId]);
+  const { data, loadFailed, refresh } = useChatQuery(loadThread);
+  const thread = data?.thread;
 
   return (
     <ChatLayout
@@ -66,7 +71,14 @@ function CoachThread({ threadId, userId }: { threadId: string; userId: string })
       backLabel="Back to conversations"
       onBack={() => router.setParams({ threadId: undefined })}>
       {thread ? (
-        <CoachConversation thread={thread} userId={userId} />
+        <>
+          {data?.role === 'admin' ? (
+            <View style={styles.assignment}>
+              <CoachAssignment threadId={thread.id} assignedCoachId={thread.assignedCoachId} onAssigned={refresh} />
+            </View>
+          ) : null}
+          <CoachConversation thread={thread} userId={userId} />
+        </>
       ) : (
         <View style={styles.centered}>
           {loadFailed ? (
@@ -129,6 +141,14 @@ function CoachInbox({
   return (
     <ScrollView contentContainerStyle={styles.inbox}>
       <Text accessibilityRole="header" style={styles.heading}>Conversations</Text>
+      {inbox ? (
+        <AppButton
+          title={inbox.role === 'admin' ? 'Review coach applications' : inbox.role === 'coach' ? 'Coach application' : 'Become a coach'}
+          icon="person-add"
+          variant="secondary"
+          onPress={() => router.push('/coach-applications' as Href)}
+        />
+      ) : null}
       {pushSettings && (inbox?.role === 'user' || pushSettings.enabled) ? (
         <AppCard tone="muted" style={styles.feedbackCard}>
           <AppButton
@@ -185,6 +205,9 @@ function CoachInbox({
               {unreadReplies.some((reply) => reply.threadId === thread.id) ? (
                 <Text style={styles.unread}>New reply</Text>
               ) : null}
+              {inbox?.role === 'admin' && !thread.assignedCoachId ? (
+                <Text style={styles.status}>Unassigned</Text>
+              ) : null}
               <Text style={styles.time}>
                 {new Date(thread.lastMessageAt ?? thread.createdAt).toLocaleString(undefined, {
                   month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -233,6 +256,11 @@ function exitChat() {
 }
 
 const styles = StyleSheet.create({
+  assignment: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
   screen: {
     backgroundColor: AppTheme.colors.background,
     flex: 1,

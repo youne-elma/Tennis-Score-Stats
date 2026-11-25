@@ -67,8 +67,25 @@ grant insert (thread_id, sender_id, message_type, body, metadata)
 
 create schema if not exists private;
 
--- Participant rows alone never grant access: only the thread's owner and
--- verified coaches/admins may access its contents.
+-- On upgrade, keep existing coaching relationships using the latest coach reply.
+do $$
+begin
+  if to_regprocedure('private.can_manage_coach_chat()') is not null
+    and to_regprocedure('private.can_manage_chat_thread(uuid)') is null then
+    with latest_coaches as (
+      select distinct on (message.thread_id) message.thread_id, message.sender_id
+      from public.chat_messages message
+      join public.user_roles author on author.user_id = message.sender_id and author.role = 'coach'
+      join public.chat_threads thread on thread.id = message.thread_id and thread.created_by <> message.sender_id
+      order by message.thread_id, message.created_at desc, message.id desc
+    )
+    update public.chat_threads thread set assigned_coach_id = latest_coaches.sender_id
+    from latest_coaches where latest_coaches.thread_id = thread.id and thread.assigned_coach_id is null;
+  end if;
+end;
+$$;
+
+-- Participant rows alone never grant access.
 create or replace function private.is_chat_thread_owner(target_thread_id uuid)
 returns boolean
 language sql
@@ -84,21 +101,28 @@ as $$
   );
 $$;
 
-create or replace function private.can_manage_coach_chat()
+create or replace function private.can_manage_chat_thread(target_thread_id uuid)
 returns boolean
 language sql
 security definer
 set search_path = ''
 stable
 as $$
-  select (select private.current_user_role()) in ('coach', 'admin');
+  select (select private.current_user_role()) = 'admin'
+    or (
+      (select private.current_user_role()) = 'coach'
+      and exists (
+        select 1 from public.chat_threads thread
+        where thread.id = target_thread_id and thread.assigned_coach_id = (select auth.uid())
+      )
+    );
 $$;
 
 revoke execute on function private.is_chat_thread_owner(uuid) from public;
-revoke execute on function private.can_manage_coach_chat() from public;
+revoke execute on function private.can_manage_chat_thread(uuid) from public;
 grant usage on schema private to authenticated;
 grant execute on function private.is_chat_thread_owner(uuid) to authenticated;
-grant execute on function private.can_manage_coach_chat() to authenticated;
+grant execute on function private.can_manage_chat_thread(uuid) to authenticated;
 
 -- The trigger updates server-managed columns that clients cannot modify.
 create or replace function public.handle_chat_message_created()
@@ -128,7 +152,7 @@ on public.chat_threads for select
 to authenticated
 using (
   created_by = (select auth.uid())
-  or (select private.can_manage_coach_chat())
+  or (select private.can_manage_chat_thread(id))
 );
 
 create policy "chat_threads_insert_own"
@@ -141,11 +165,11 @@ on public.chat_threads for update
 to authenticated
 using (
   created_by = (select auth.uid())
-  or (select private.can_manage_coach_chat())
+  or (select private.can_manage_chat_thread(id))
 )
 with check (
   created_by = (select auth.uid())
-  or (select private.can_manage_coach_chat())
+  or (select private.can_manage_chat_thread(id))
 );
 
 create policy "chat_threads_delete_admin"
@@ -163,7 +187,7 @@ on public.chat_participants for select
 to authenticated
 using (
   (select private.is_chat_thread_owner(thread_id))
-  or (select private.can_manage_coach_chat())
+  or (select private.can_manage_chat_thread(thread_id))
 );
 
 create policy "chat_participants_insert_visible"
@@ -177,7 +201,7 @@ with check (
       and (select private.is_chat_thread_owner(thread_id))
     )
     or (
-      (select private.can_manage_coach_chat())
+      (select private.can_manage_chat_thread(thread_id))
       and participant_role = (select private.current_user_role())
       and exists (
         select 1 from public.chat_threads thread
@@ -194,14 +218,14 @@ using (
   user_id = (select auth.uid())
   and (
     (select private.is_chat_thread_owner(thread_id))
-    or (select private.can_manage_coach_chat())
+    or (select private.can_manage_chat_thread(thread_id))
   )
 )
 with check (
   user_id = (select auth.uid())
   and (
     (select private.is_chat_thread_owner(thread_id))
-    or (select private.can_manage_coach_chat())
+    or (select private.can_manage_chat_thread(thread_id))
   )
 );
 
@@ -220,7 +244,7 @@ on public.chat_messages for select
 to authenticated
 using (
   (select private.is_chat_thread_owner(thread_id))
-  or (select private.can_manage_coach_chat())
+  or (select private.can_manage_chat_thread(thread_id))
 );
 
 create policy "chat_messages_insert_visible"
@@ -236,7 +260,7 @@ with check (
   )
   and (
     (select private.is_chat_thread_owner(thread_id))
-    or (select private.can_manage_coach_chat())
+    or (select private.can_manage_chat_thread(thread_id))
   )
 );
 
@@ -244,5 +268,58 @@ create policy "chat_messages_delete_admin"
 on public.chat_messages for delete
 to authenticated
 using ((select private.current_user_role()) = 'admin');
+
+drop function if exists private.can_manage_coach_chat();
+
+create or replace function public.list_chat_coaches()
+returns table (user_id uuid, name text)
+language plpgsql
+security definer
+set search_path = ''
+stable
+as $$
+begin
+  if private.current_user_role() <> 'admin' then
+    raise exception using errcode = '42501', message = 'An administrator is required.';
+  end if;
+  return query
+  select coach.user_id, coalesce(nullif(btrim(profile.display_name), ''), account.email, 'Coach')
+  from public.user_roles coach
+  join auth.users account on account.id = coach.user_id
+  left join public.profiles profile on profile.id = coach.user_id
+  where coach.role = 'coach'
+  order by 2, coach.user_id;
+end;
+$$;
+
+create or replace function public.assign_chat_coach(p_thread_id uuid, p_coach_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if private.current_user_role() <> 'admin' then
+    raise exception using errcode = '42501', message = 'An administrator is required.';
+  end if;
+  if p_coach_id is not null then
+    perform 1 from public.user_roles where user_id = p_coach_id and role = 'coach' for share;
+    if not found then
+      raise exception using errcode = '22023', message = 'Choose an active coach.';
+    end if;
+  end if;
+
+  update public.chat_threads set assigned_coach_id = p_coach_id
+  where id = p_thread_id and created_by is distinct from p_coach_id;
+  if not found then
+    raise exception using errcode = '22023', message = 'Choose another coach for this conversation.';
+  end if;
+end;
+$$;
+
+revoke all on function public.list_chat_coaches() from public, anon, authenticated;
+revoke all on function public.assign_chat_coach(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.list_chat_coaches() to authenticated;
+grant execute on function public.assign_chat_coach(uuid, uuid) to authenticated;
 
 commit;
