@@ -30,6 +30,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                 <Stack.Screen name="coach-chat" options={{ headerShown: false }} />
                 <Stack.Screen name="coach-applications" options={{ headerShown: false }} />
+                <Stack.Screen name="match-progression" options={{ headerShown: false }} />
                 <Stack.Screen name="match/[id]" options={{ headerShown: false }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
               </Stack>

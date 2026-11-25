@@ -31,7 +31,7 @@ export function filterMatchHistory(matches: TennisMatch[], filters: MatchHistory
   });
 }
 
-function getPeriodRange(period: MatchHistoryFilters['period'], today: Date) {
+export function getPeriodRange(period: MatchHistoryFilters['period'], today: Date) {
   const year = today.getFullYear();
   const month = today.getMonth();
   const day = today.getDate();

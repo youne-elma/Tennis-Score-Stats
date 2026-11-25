@@ -1,5 +1,5 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -443,12 +443,21 @@ function MatchHistory({
     <>
       <View style={styles.historyToolbar}>
         <Text accessibilityLiveRegion="polite" style={styles.matchMeta}>{resultLabel}</Text>
-        <AppButton
-          title={activeFilters ? `Filters (${activeFilters})` : "Filters"}
-          icon="filter-list"
-          variant="secondary"
-          onPress={() => setFiltersOpen(true)}
-        />
+        <View style={styles.historyActions}>
+          <AppButton
+            title="Progression"
+            icon="show-chart"
+            variant="secondary"
+            onPress={() => router.push((filters.playerId
+              ? `/match-progression?playerId=${encodeURIComponent(filters.playerId)}` : "/match-progression") as Href)}
+          />
+          <AppButton
+            title={activeFilters ? `Filters (${activeFilters})` : "Filters"}
+            icon="filter-list"
+            variant="secondary"
+            onPress={() => setFiltersOpen(true)}
+          />
+        </View>
       </View>
 
       {filteredMatches.length ? filteredMatches.map((match) => (
@@ -760,8 +769,14 @@ const styles = StyleSheet.create({
   historyToolbar: {
     alignItems: "center",
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
     justifyContent: "space-between",
+  },
+  historyActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
   requirementCard: {
     gap: 8,
